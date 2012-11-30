@@ -1,0 +1,7 @@
+#COMMANDS:
+toAmos_new -s c_ruddii.seq -b c_ruddii.bnk
+hash-overlap c_ruddii.bnk -B -x 0.04 -o 40 
+tigger -b c_ruddii.bnk
+make-consensus -e 0.04 -o 40 -B -b c_ruddii.bnk 
+bank2fasta -b c_ruddii.bnk > c_ruddii.fasta
+

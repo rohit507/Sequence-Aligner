@@ -1,0 +1,13 @@
+# Here's the list of files and filetypes that 
+#  git is supposed to ignore as we use it, 
+#  since they're generate and not actually part
+#  of the source. 
+
+cls/
+scala/
+*.class
+*.swp
+Proj3.jar
+Proj3Scala.jar
+.__*
+java.*

@@ -1,0 +1,13 @@
+#COMMANDS:
+#create AMOS bank from input sequence 
+toAmos_new -s c_ruddii.seq -b c_ruddii.bnk
+#assemble using AMOS hash-overlap
+#NOTE: this is the step you are replacing
+hash-overlap c_ruddii.bnk -B -x 0.04 -o 40 
+#perform layout/contigging
+tigger -b c_ruddii.bnk
+#call consensus
+make-consensus -e 0.04 -o 40 -B -b c_ruddii.bnk 
+#output final assembly
+bank2fasta -b c_ruddii.bnk > c_ruddii.fasta
+
