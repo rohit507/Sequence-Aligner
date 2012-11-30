@@ -4,7 +4,7 @@
     By Rohit Ramesh 
 */
 
-// mport java.io.*;
+//import java.io.*;
 //import java.lang.*;
 //import java.util.LinkedHashMap;
 //import java.util.HashMap;
@@ -13,6 +13,7 @@
 //import org.biojava3.core.sequence.DNASequence;
 //import org.biojava3.core.sequence.io.FastaReaderHelper;
 
-public class Project4
-{ 
+object Project4 {
+    def main(args: Array[String]) {
+    }
 }
