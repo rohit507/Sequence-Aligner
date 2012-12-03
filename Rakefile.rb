@@ -61,7 +61,7 @@ end
 
 namespace :clean do
 
-    task :default => :classes
+    task :default => [:classes,:jars]
 
     task :full do
         rm_rf 'scala/'
@@ -70,6 +70,10 @@ namespace :clean do
     task :classes do
         rm_rf 'cls/'
         mkdir 'cls'
+    end
+
+    task :jars do 
+        rm_rf PS 
     end
 end
 
