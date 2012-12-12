@@ -4,11 +4,12 @@
     By Rohit Ramesh 
 */
 
-import BioLibs._
-
 import scala.collection._
+import scala.math._
+import scala.math
 
 class KmerTable {
+
     var KmerData    : Map[String,mutable.HashSet[Int]] = 
                 new mutable.HashMap[String,mutable.HashSet[Int]]()
     var SequenceData : Map[Int,String] = new mutable.HashMap[Int,String]()
@@ -31,6 +32,10 @@ class KmerTable {
         return KmerData.size
     }
 
+    def uniqueSeqs() : Int = {
+        return SequenceData.size
+    }
+
     def kmerCollisionHistogram() : Map[Int,Int] = {
         var hist = new mutable.HashMap[Int,Int]()
 
@@ -46,5 +51,25 @@ class KmerTable {
 
         return hist
     }
+
+    def dispatchCollisions( bounds : (Int,Int) , act : ((Int,String),(Int,String)) => _) {
+        var collisionSet = new mutable.HashSet[(Int,Int)]()
+        for ((k,ss) <- KmerData) {
+            var arr = ss.toArray
+            if ((arr.size >= bounds._1) && (arr.size <= bounds._2)) {
+                for (i <- 0 until arr.size) {
+                    for( j <- (i + 1) until arr.size) {
+                        var n = min(arr(i),arr(j))
+                        var x = max(arr(i),arr(j))
+                        if(!collisionSet.contains((n,x))) {
+                            collisionSet += ((n,x))
+                            act((n,SequenceData.apply(n)),(x,SequenceData(x)))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 } 
     
