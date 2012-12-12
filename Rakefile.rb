@@ -30,6 +30,8 @@ PJ = "Proj4.jar"        # Project 4 Java Standalone Executable
 Sources = FileList["#{SF}/*.scala"].gsub("#{SF}/","")
 Classes = Sources.ext(".class")
 
+JavaOpts = "-Xmx"
+
 # Task to take the large scala folder and regenerate the
 #  entire useful directory structure. This is nice if you
 #  wish to save space in transport yet still manage useful 
@@ -53,7 +55,8 @@ namespace :run do
     task :default => :scala
 
     task :scala => PS do 
-        sh "#{BF}/#{SE} #{PS} amos/small/crp177.seq"
+        sh "#{BF}/#{SE} " +
+           " #{PS} amos/small/crp177.seq"
     end
 
 end

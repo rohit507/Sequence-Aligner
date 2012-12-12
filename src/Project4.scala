@@ -56,21 +56,29 @@ object Project4 {
         // kmerAct.start
 
         var kmerSets = List[Future[(Int,String,Set[String])]]()
+        var kmerTable = new KmerTable()
 
         readSeq(args(0),(id : Int, seq : String) => {
            println("Read Seq : " + id)
            val f = future {
                 println("Start Processing Seq : " + id)
-                        var s = generateKmerSet(kmerSize)(seq)
-                        //Thread.sleep(rand.nextInt(100))
-                        println("Generated Kmers for Seq : " + id +
+                var s = generateKmerSet(10)(seq)
+                Thread.sleep(rand.nextInt(100))
+                println("Generated Kmers for Seq : " + id +
                                 " on thread " + Thread.currentThread.getName )
-
+                (id,seq,s._2)
            }
+           println("Sent Seq : " + id)
            kmerSets = kmerSets ::: List(f)
-           // println( "Read Seq " + id + ": " + seq )
         })
 
-        kmerAct ! "stop"
+        kmerSets.foreach { f =>
+            f.apply() match {
+                case (id,seq,set) => kmerTable.addKmerSet(id,seq,set)
+                case _ => println("erroe in future return")
+            }
+        }
+        
+        println("there are " + kmerTable.uniqueKmers() + " unique kmers in the input.")
     }
 }
