@@ -46,10 +46,14 @@ end
 
 # our app with input of various sorts
 
+task :run => "run:default"
+
 namespace :run do
 
+    task :default => :scala
+
     task :scala => PS do 
-        sh "#{BF}/#{SE} #{PS}"
+        sh "#{BF}/#{SE} #{PS} amos/small/crp177.seq"
     end
 
 end
@@ -58,6 +62,8 @@ end
 #  all of the code related files, and a full clean that'll
 #  expunge everything even vaguely dublicated so we can 
 #  package things up sensibly small. 
+
+task :clean => "clean:default"
 
 namespace :clean do
 
@@ -79,6 +85,8 @@ end
 
 # tasks to build various executables and bits of final output
 
+task :build => "build:default"
+
 namespace :build do
 
     task :default => :partial 
@@ -86,6 +94,7 @@ namespace :build do
     task :partial => PS
 
 end
+
 
 file PS => [:scala,"#{CF}/Project4.class",BioJ] do
     cp BioJ , PS
@@ -109,7 +118,13 @@ end
 #  each set of class files is generated in the proper order
 #  and we can assemble a coherent jar out of the thing. 
 
-file "#{SF}/Project4.scala" => ["scala","#{CF}/BioLibs.class"]
+file "#{SF}/KmerTable.scala" => ["scala",
+                                "#{CF}/BioLibs.class"]
+
+
+file "#{SF}/Project4.scala" => ["scala",
+                                "#{CF}/BioLibs.class",
+                                "#{CF}/KmerTable.class"]
 
 # FIXME TODO FIXME TODO FIXME TODO FIXME TODO
 # Below this is the old rakefile commented out
