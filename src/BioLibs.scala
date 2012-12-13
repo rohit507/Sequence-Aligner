@@ -10,11 +10,6 @@ import scala.collection._
 import scala.actors._
 import scala.actors.Futures._
 
-/*
-import org.biojava3.core.sequence.compound.DNACompoundSet
-import org.biojava3.core.sequence.compound.NucleotideCompound
-import org.biojava3.alignment.SimpleSubstitutionMatrix
-*/
 object BioLibs {
 
     type Alignment = (String,String,Int,Int,Int,Int)
@@ -88,27 +83,22 @@ object BioLibs {
 
         // It is faster not to use futures for the kmer splitting
 
-        //var kmerSets = List[Future[(Int,String,Set[String])]]()
         var kmerSets = List[(Int,String,Set[String])]()
         var kmerTable = new KmerTable()
         var gKS = generateKmerSet(size)_
 
         readSeq(file,(id : Int, seq : String) => {
            if (debug) { println("Read Seq : " + id) }
-           //val f = future {
-                if (debug) { println("Start Processing Seq : " + id)}
-                var s = gKS(seq)
-                if (debug) { println("Generated Kmers for Seq : " + id +
+           if (debug) { println("Start Processing Seq : " + id)}
+           var s = gKS(seq)
+           if (debug) { println("Generated Kmers for Seq : " + id +
                                 " on thread " + Thread.currentThread.getName ) }
-                val f = (id,seq,s._2)
-                //(id,seq,s._2)
-           //}
+            val f = (id,seq,s._2)
            if (debug) { println("Sent Seq : " + id) }
            kmerSets = kmerSets ::: List(f)
         })
 
         kmerSets.foreach { f =>
-            //f.apply() match {
             f match {
                 case (id,seq,set) => kmerTable.addKmerSet(id,seq,set)
                                 if (debug) { println("Added Kmer Set : " + id) }
@@ -121,7 +111,6 @@ object BioLibs {
 
     def generateFutureKmerTable( file : String, size : Int,
                                  debug : Boolean) : KmerTable = {
-
 
         var kmerSets = List[Future[(Int,String,Set[String])]]()
         var kmerTable = new KmerTable()
@@ -312,11 +301,14 @@ object BioLibs {
      
 }
 
-class AlignSettings( subf : (Char,Char) => Int , gO : Int, gE : Int, mO : Int) {
+class AlignSettings( subf : (Char,Char) => Int , gO : Int, gE : Int, mO : Int,
+                       mId : Float, mIg : Int ) {
     val costFunc : (Char,Char) => Int = subf
     val gapOpen : Int = gO
     val gapExtend : Int = gE
     val minOverlap : Int = mO
+    val minIdentity = mId
+    val maxIgnore = mIg
 }
 
 

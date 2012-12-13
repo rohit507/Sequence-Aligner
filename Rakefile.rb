@@ -73,7 +73,7 @@ namespace :run do
     task :default => :scala
 
     task :scala => PS do 
-        sh "#{BF}/#{SE} #{PS} #{SmallInput}"
+        sh "#{BF}/#{SE} #{PS} -i #{SmallInput}"
     end
 
 end
@@ -87,19 +87,6 @@ namespace :pipeline do
     task :amos => "amos:default"
 
     namespace :amos do
-
- #      #COMMANDS:
- #      #create AMOS bank from input sequence 
- #      toAmos_new -s c_ruddii.seq -b c_ruddii.bnk
- #      #assemble using AMOS hash-overlap
- #      #NOTE: this is the step you are replacing
- #      hash-overlap c_ruddii.bnk -B -x 0.04 -o 40 
- #      #perform layout/contigging
- #      tigger -b c_ruddii.bnk
- #      #call consensus
- #      make-consensus -e 0.04 -o 40 -B -b c_ruddii.bnk 
- #      #output final assembly
- #      bank2fasta -b c_ruddii.bnk > c_ruddii.fasta
 
         task :default do
             run_amos_pipe(SmallInput,true,true)
@@ -176,6 +163,7 @@ namespace :pipeline do
             sh("#{BF}/toAmos_new -s #{seq} -b #{bnk}")
             bnkTime = Time.now()
                 # Place your overlapper here
+            sh("#{BF}/#{SE} #{PS} -i #{seq} > #{ovl}")
             ovrTime = Time.now()
             sh("#{BF}/bank-transact -b #{bnk} -m #{ovl}")
             trnTime = Time.now()

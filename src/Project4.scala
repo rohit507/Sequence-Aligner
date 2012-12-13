@@ -22,11 +22,7 @@ object Project4 {
     type Overlap = (Char,(Int,Int),Int,Int,Int)
 
     var rand = new Random(System.currentTimeMillis())
-    var kSize = 12
-    var debug = false
     var bounds = (2,17)
-    var minCorrect = 0.98
-    var algnStngs = new AlignSettings(simpleMatch(95,-70),-200,-20,40)
 
 /*  ======== Defaults =========
     min overlap length = 40 
@@ -37,26 +33,43 @@ object Project4 {
     And I'd like you to continue to use HOXD 
     (or BLOSUM) for match/mismatch. */
 
+    var debug = false
+    var kSize = 12
+    var action = "calc-overlaps"
+    var input = ""
+    //var output = "STDOUT"
+    var stHash = true
+    var stAlign = false
+
     def main(args: Array[String]) {
-        calculateOverlaps(args(0),(ovl : Overlap) => {
-            println(BioLibs.printOverlap(ovl))
-        })
+        var alignSettings = readArgs(args)
+
+        action match {
+            case "calc-overlaps" =>
+            case "test-overlaps" =>
+            case "test-kmer-cover" =>
+                printKmerCover(input)
+                System.exit(0)
+        }
     }
 
-    def readArgs(args: Array[String]) : AlignSettings {
+    def readArgs(args: Array[String]) : AlignSettings = {
         var i = 0
         var hoxd = ""
-        var input = ""
-        var output = ""
-        var minOverlap = 0
-        var minIdentity = 0.0
+        var mat = 95
+        var mism = -70
+        var minOverlap = 40
+        var minIdentity = 0.98f
         var maxIgnore = 90
-        var gapOpen = 0
-        var gapExtend = 0
+        var gapOpen = -200
+        var gapExtend = -20
 
         while (i < args.length) {
             args(i) match {
-                case "-m" | "--matrix" => 
+                case "-h" | "--help" =>
+                    printHelp()
+                    System.exit(0)
+                case "-m" | "--matrix" | "-H" | "--HOXD-matrix" => 
                     hoxd = args(i + 1) // Matrix
                     i += 2
                 case "-k" | "--kmer-size" => 
@@ -65,8 +78,14 @@ object Project4 {
                 case "-i" | "--input" => 
                     input = args(i + 1) 
                     i += 2
-                case "-o" | "--output" => 
-                    output = args(i + 1)
+                //case "-o" | "--output" => 
+                //    output = args(i + 1)
+                //    i += 2
+                case "--match" =>
+                    mat = args(i + 1).toInt
+                    i += 2
+                case "--mismatch" =>
+                    mism = args(i + 1).toInt
                     i += 2
                 case "--min-overlap" => 
                     minOverlap = args(i + 1).toInt
@@ -83,11 +102,47 @@ object Project4 {
                 case "--max-ignore" =>
                     maxIgnore = args(i + 1).toInt
                     i += 2
+                case "--st-hash" =>
+                    stHash = true
+                    i += 1
+                case "--mt-hash" =>
+                    stHash = false
+                    i += 1
+                case "--st-align" =>
+                    stAlign = true
+                    i += 1
+                case "--mt-align" =>
+                    stAlign = false
+                    i += 1
+                case "--calc-overlaps" =>
+                    action = "calc-overlaps"
+                    i += 1
+                case "--test-overlaps" =>
+                    action = "test-overlaps"
+                    i += 1
+                case "--test-kmer-cover" =>
+                    action = "test-kmer-cover"
+                    i += 1
                 case _ =>
                     println("Invalid Argument")
                     System.exit(1)
             }
-        } 
+        }
+
+        var compFunc = simpleMatch(mat,mism)
+
+        if (hoxd != "") {
+            compFunc = readHoxd(hoxd) 
+        }
+
+        if (input == "") {
+            println("No input file specified")
+            System.exit(-1)
+        }
+
+        return new AlignSettings(compFunc,gapOpen,gapExtend,minOverlap,
+                                 minIdentity,maxIgnore)
+ 
     }
 
     def printHelp() {
@@ -98,23 +153,25 @@ object Project4 {
                 "   See README file for details   \n")
     }
 
-    def calculateOverlaps(file : String, act : (Overlap) => _) {
+    def calculateOverlaps(file : String, algnStngs : AlignSettings,
+                             act : (Overlap,Alignment) => _) {
         var ktab = generateKmerTable(file,kSize,false)
-        var que = mutable.Queue[Future[Overlap]]()
+        var que = mutable.Queue[Future[(Overlap,Alignment)]]()
               
         ktab.dispatchCollisions(bounds,(seqA : (Int,String) ,seqB : (Int,String)) => {
             que += future {
                 val align = BioLibs.generateLocalAlignment(seqA._2,seqB._2,algnStngs)
-                BioLibs.generateOverlap(seqA,seqB,align,algnStngs)
+                (BioLibs.generateOverlap(seqA,seqB,align,algnStngs),align)
             }
         })
 
         for (f <- que) {
-            act(f.apply())
+            var t = f.apply()
+            act(t._1,t._2)
         }
     }
 
-    def testOverlap( file : String, all : Boolean) {
+    def testOverlap( file : String,algnStngs : AlignSettings,  all : Boolean) {
         var ktab = generateKmerTable(file,kSize,false)
         var i = 0
         ktab.dispatchCollisions(bounds,(seqA : (Int,String) ,seqB : (Int,String)) => {
@@ -134,7 +191,7 @@ object Project4 {
 
     // Multithreaded futures overlap is faster than the single thread version
     //  by more than a factor of 2. (^_^)
-    def testFutureOverlap( file : String, all : Boolean) {
+    def testFutureOverlap( file : String, algnStngs : AlignSettings, all : Boolean) {
         var ktab = generateKmerTable(file,kSize,false)
         var i = 0
         var que = mutable.Queue[Future[(Int,(Int,String),(Int,String),Alignment,Overlap)]]()
