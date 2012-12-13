@@ -31,7 +31,8 @@ PJ = "Proj4.jar"        # Project 4 Java Standalone Executable
 Sources = FileList["#{SF}/*.scala"].gsub("#{SF}/","")
 Classes = Sources.ext(".class")
 
-JavaOpts = "-Xmx"
+SCOpts = "-deprecation -unchecked"  # Scala Compiler Options
+JavaOpts = "-Xmx"                   # Java Runtime Options
 
 # Task to take the large scala folder and regenerate the
 #  entire useful directory structure. This is nice if you
@@ -113,7 +114,7 @@ Sources.each do |sourceFile|
     
     file "#{CF}/#{s}.class" =>
                 ["#{SF}/#{s}.scala",BioJ] do
-        sh "#{BF}/#{SC} -classpath #{CP} #{SF}/#{s}.scala -d #{CF}"
+        sh "#{BF}/#{SC} #{SCOpts} -classpath #{CP} #{SF}/#{s}.scala -d #{CF}"
     end
 
 end
@@ -122,13 +123,13 @@ end
 #  each set of class files is generated in the proper order
 #  and we can assemble a coherent jar out of the thing. 
 
-file "#{SF}/KmerTable.scala" => ["scala"]
+file "#{CF}/KmerTable.class" => ["scala"]
 
 
-file "#{SF}/BioLibs.scala" => ["scala",
+file "#{CF}/BioLibs.class" => ["scala",
                                "#{CF}/KmerTable.class"]
 
-file "#{SF}/Project4.scala" => ["scala",
+file "#{CF}/Project4.class" => ["scala",
                                 "#{CF}/BioLibs.class",
                                 "#{CF}/KmerTable.class"]
 

@@ -5,13 +5,21 @@
 */
 
 import java.io._
-import scala.collection._
 
+import scala.collection._
+import scala.actors._
+import scala.actors.Futures._
+
+/*
 import org.biojava3.core.sequence.compound.DNACompoundSet
 import org.biojava3.core.sequence.compound.NucleotideCompound
 import org.biojava3.alignment.SimpleSubstitutionMatrix
-
+*/
 object BioLibs {
+
+    type Alignment = (String,String,Int,Int,Int,Int)
+    type Overlap = (Char,(Int,Int),Int,Int,Int)
+
     // Read in a fasta file dispatching each sequence as it's
     //  read through the input function. 
     def readSeq( file : String, act : (Int,String) => _) : Int = {
@@ -26,7 +34,7 @@ object BioLibs {
         line = in.readLine()
         while (line != null) {
             if (line.startsWith(">")) {
-                act(i,s)
+                act(i,s.toUpperCase)
                 i += 1
                 s = ""
             } else {
@@ -35,7 +43,7 @@ object BioLibs {
             line = in.readLine()
         }
     
-        act(i,s)
+        act(i,s.toUpperCase)
 
         return i
     }
@@ -83,12 +91,13 @@ object BioLibs {
         //var kmerSets = List[Future[(Int,String,Set[String])]]()
         var kmerSets = List[(Int,String,Set[String])]()
         var kmerTable = new KmerTable()
+        var gKS = generateKmerSet(size)_
 
         readSeq(file,(id : Int, seq : String) => {
            if (debug) { println("Read Seq : " + id) }
            //val f = future {
                 if (debug) { println("Start Processing Seq : " + id)}
-                var s = generateKmerSet(size)(seq)
+                var s = gKS(seq)
                 if (debug) { println("Generated Kmers for Seq : " + id +
                                 " on thread " + Thread.currentThread.getName ) }
                 val f = (id,seq,s._2)
@@ -108,6 +117,38 @@ object BioLibs {
         }
         
         return kmerTable
+    }
+
+    def generateFutureKmerTable( file : String, size : Int,
+                                 debug : Boolean) : KmerTable = {
+
+
+        var kmerSets = List[Future[(Int,String,Set[String])]]()
+        var kmerTable = new KmerTable()
+        var gKS = generateKmerSet(size)_
+
+        readSeq(file,(id : Int, seq : String) => {
+           if (debug) { println("Read Seq : " + id) }
+           val f = future {
+                if (debug) { println("Start Processing Seq : " + id)}
+                var s = gKS(seq)
+                if (debug) { println("Generated Kmers for Seq : " + id +
+                                " on thread " + Thread.currentThread.getName ) }
+                (id,seq,s._2)
+           }
+           if (debug) { println("Sent Seq : " + id) }
+           kmerSets = kmerSets ::: List(f)
+        })
+
+        kmerSets.foreach { f =>
+            f.apply() match {
+                case (id,seq,set) => kmerTable.addKmerSet(id,seq,set)
+                                if (debug) { println("Added Kmer Set : " + id) }
+                case _ => if (debug) { println("error in future return") }
+            }
+        }
+        
+        return kmerTable
     } 
     
     def generateKmerCover( file : String, size : Int, debug : Boolean) : (Int,Float,KmerTable) = {
@@ -120,10 +161,6 @@ object BioLibs {
                 " for a ratio of " + ratio ) }
         return (uniques,ratio,kmers)
     }
-
-  /*  def readHoxd( file : String ) : SimpleSubstitutionMatrix[NucleotideCompound] = {
-        return new SimpleSubstitutionMatrix(DNACompoundSet.getDNACompoundSet(),new File(file))
-    }*/
 
     def readHoxd( file : String ) : (Char,Char) => Int = {
 
@@ -155,7 +192,7 @@ object BioLibs {
     }
 
     def generateLocalAlignment(A : String, B : String, settings : AlignSettings) 
-                            : (String,String,Int,Int,Int,Int) = {
+                            : Alignment = {
         
 	    var M : Array[Array[Int]] = Array.ofDim(A.length()+1,B.length()+1)
         var X : Array[Array[Int]] = Array.ofDim(A.length()+1,B.length()+1)
@@ -244,37 +281,38 @@ object BioLibs {
     }
 
     def generateOverlap( seqA : (Int,String) , seqB : (Int,String),
-                         align : (String,String,Int,Int,Int,Int), settings : AlignSettings ) 
-                         : (Char,(Int,Int),Int,Int,Int) = {
+                         align : Alignment, settings : AlignSettings ) 
+                         : Overlap = {
         var adj = 'N'
         var rds = (seqA._1,seqB._1)
         var scr = 0
         var ahg = 0
         var bhg = 0
-        if (align._3 > 0) {
-            ahg = align._3
-            bhg = seqB._2.length - align._5
+        if (align._3 > align._4) {
+            ahg = - align._3 + align._4
+            bhg = - seqB._2.length + align._4 + align._2.length - 
+                    align._2.count('-' == _) + seqA._2.length - align._3 -
+                    align._1.length + align._1.count('-' == _)
         } else {
-            bhg = - align._4
-            ahg = - seqA._2.length + align._5
+            bhg = align._4 - align._3
+            ahg = seqA._2.length - seqB._2.length + bhg
         }
         return (adj,rds,scr,ahg,bhg)
     }
 
-    def printOverlap(overlap : (Char,(Int,Int),Int,Int,Int)) : String = {
+    def printOverlap(overlap : Overlap) : String = {
         return   "{OVL" +
                "\nadj:" + overlap._1 +
                "\nrds:" + overlap._2._1 + "," + overlap._2._2 +
                "\nscr:" + overlap._3 +
                "\nahg:" + overlap._4 +
                "\nbhg:" + overlap._5 + 
-               "\n}\n"
+               "\n}"
     }
      
 }
 
 class AlignSettings( subf : (Char,Char) => Int , gO : Int, gE : Int, mO : Int) {
-    //val subMatrix : SimpleSubstitutionMatrix[NucleotideCompound] = BioLibs.readHoxd(file)
     val costFunc : (Char,Char) => Int = subf
     val gapOpen : Int = gO
     val gapExtend : Int = gE
