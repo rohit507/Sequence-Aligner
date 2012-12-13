@@ -35,7 +35,9 @@ object Project4 {
     var input = ""
     var stHash = true
     var stAlign = false
+    var blockAlign = true
     var debugAll = false
+    
 
     def main(args: Array[String]) {
         var alignSettings = readArgs(args)
@@ -130,6 +132,12 @@ object Project4 {
                     i += 1
                 case "--mt-align" =>
                     stAlign = false
+                    i += 1
+                case "--block-align" =>
+                    blockAlign = true
+                    i += 1
+                case "--single-align" =>
+                    blockAlign = false
                     i += 1
                 case "--calc-overlaps" =>
                     action = "calc-overlaps"
@@ -329,14 +337,22 @@ object Project4 {
 
     def genAlignment(table : KmerTable,settings : AlignSettings,
                         filter : Boolean) : Seq[Alignment] = {
-        if (stAlign) {
-            return genSTAlign(table,settings,filter)
+        if (blockAlign) {
+            if (stAlign) {
+                return genBlockSTAlign(table,settings,filter)
+            } else {
+                return genBlockMTAlign(table,settings,filter)
+            }
         } else {
-            return genMTAlign(table,settings,filter)
+            if (stAlign) {
+                return genSingleSTAlign(table,settings,filter)
+            } else {
+                return genSingleMTAlign(table,settings,filter)
+            }
         }
-    }
+      }
 
-    def genSTAlign(table : KmerTable,settings : AlignSettings,
+    def genSingleSTAlign(table : KmerTable,settings : AlignSettings,
                      filter : Boolean) : Seq[Alignment] = {
         var aligns = mutable.Queue[Alignment]()
         table.dispatchCollisions(settings.minCollisions, (A : Sequence, B : Sequence) => {
@@ -348,7 +364,7 @@ object Project4 {
         return aligns
     }
 
-    def genMTAlign(table : KmerTable,settings : AlignSettings,
+    def genSingleMTAlign(table : KmerTable,settings : AlignSettings,
                      filter : Boolean) : Seq[Alignment] = {
         var futures = mutable.Queue[Future[Alignment]]()
         var aligns = mutable.Queue[Alignment]()
@@ -357,11 +373,52 @@ object Project4 {
         })
 
         for (f <- futures) {
-            aligns += f.apply()
+            var al = f.apply()
+            if ((! filter) || (al.valid(settings))) {
+                aligns += al
+            }
         }
 
         return aligns
     }
+
+    def genBlockSTAlign(table : KmerTable,settings : AlignSettings,
+                     filter : Boolean) : Seq[Alignment] = {
+        var aligns = mutable.Queue[Alignment]()
+        table.dispatchCollisionBlocks(settings.minCollisions, 
+                                (max : Int, A : Sequence, S : Seq[Sequence]) => {
+            var alg =  generateLocalAlignmentSet(max,A,S,settings)
+            for (a <- alg) {
+                if ((! filter) || (a.valid(settings))) {
+                    aligns += a
+                }
+            }
+        })
+        return aligns
+
+    }
+
+    def genBlockMTAlign(table : KmerTable,settings : AlignSettings,
+                     filter : Boolean) : Seq[Alignment] = {
+        var futures = mutable.Queue[Future[Seq[Alignment]]]()
+        var aligns = mutable.Queue[Alignment]()
+        table.dispatchCollisionBlocks(settings.minCollisions,
+                                (max : Int, A : Sequence, S : Seq[Sequence]) => {
+            futures += future {generateLocalAlignmentSet(max,A,S,settings)}
+        })
+
+        for (f <- futures) {
+            var alg = f.apply()  
+            for (a <- alg) {
+                if ((! filter) || (a.valid(settings))) {
+                    aligns += a
+                }
+            }
+        }
+
+        return aligns
+    }
+
 
     def calcOverlaps(alignments : Seq[Alignment],settings : AlignSettings) : String = {
         var out = ""

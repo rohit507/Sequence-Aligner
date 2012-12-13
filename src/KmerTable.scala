@@ -91,10 +91,10 @@ class KmerTable {
     }
 
     def dispatchCollisionBlocks( minCollision : Int , act : 
-                                (Int,Sequence,Set[Sequence]) => _) {
+                                (Int,Sequence,Seq[Sequence]) => _) {
         calculatePairAlignments()
         for ((i,s) <- AlignData) {
-            var set = mutable.HashSet[Sequence]()
+            var set = mutable.Queue[Sequence]()
             var max = 0
             for ((j,count) <- s) {                
                 if (count > minCollision) {

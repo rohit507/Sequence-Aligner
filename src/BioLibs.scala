@@ -199,7 +199,108 @@ object BioLibs {
 
         return new Alignment(seqA,seqB,xSeq,ySeq,(i,j),opt,c,e)
     }
-     
+    
+
+    def generateLocalAlignmentSet(maxL : Int, seqA : Sequence, seqS : Seq[Sequence],
+                         settings : AlignSettings) : Seq[Alignment] = {
+        
+        val A = seqA.seq
+        val out = mutable.Queue[Alignment]()
+
+	    var M : Array[Array[Int]] = Array.ofDim(A.length()+1,maxL+1)
+        var X : Array[Array[Int]] = Array.ofDim(A.length()+1,maxL+1)
+	    var Y : Array[Array[Int]] = Array.ofDim(A.length()+1,maxL+1)
+
+        for ( seqB <- seqS ) {
+        
+        val B = seqB.seq
+
+	    for (i <- 0 until A.length()){//Fills in zero row
+	        M(i)(0) = 0
+	        X(i)(0) = 0
+            Y(i)(0) = settings.gapOpen + i * settings.gapExtend;
+	    }
+
+	    for (i <- 0 until B.length()){//Fills in zero columns
+            M(0)(i) = 0
+	        X(0)(i) = settings.gapOpen + i * settings.gapExtend;
+            Y(0)(i) = 0
+	    }
+
+        var max = 0
+        var maxLoc = (0,0)
+        var t = 0
+
+	    for (i <- 1 to A.length()){
+	        for (j <- 1 to B.length()){
+	    	//Based off of history, I created the matrix
+    	        M(i)(j) = settings.costFunc(A.charAt(i-1),B.charAt(j-1)) + 
+                           math.max(math.max(M(i-1)(j-1),Y(i-1)(j-1)),
+                                    math.max(X(i-1)(j-1),0))
+
+                X(i)(j) = settings.gapExtend + 
+                           math.max(math.max(M(i)(j-1) + settings.gapOpen,
+                                             Y(i)(j-1) + settings.gapOpen),
+                                    math.max(X(i)(j-1),0))
+           
+                Y(i)(j) = settings.gapExtend + 
+                           math.max(math.max(M(i-1)(j) + settings.gapOpen, Y(i-1)(j)),
+                                    math.max(X(i-1)(j) + settings.gapOpen, 0))
+
+                t = math.max(M(i)(j),math.max(X(i)(j),Y(i)(j)))
+
+                if (t > max) {
+                    max = t
+                    maxLoc = (i,j)
+                }
+            }
+	    }
+
+        var opt = maxLoc
+        var i = maxLoc._1 
+        var j = maxLoc._2
+        var xSeq = "" 
+        var ySeq = ""
+        var c = 0
+        var e = 0
+        var pa = ' '
+        var pb = ' '
+
+        max = math.max(M(i)(j),math.max(X(i)(j),Y(i)(j)))
+
+        do {
+            if (M(i)(j) == max) {
+                pa = A.charAt(i-1)
+                pb = B.charAt(j-1)
+                i -= 1
+                j -= 1
+            } else if (X(i)(j) == max) {
+                pa = A.charAt(i-1)
+                pb = '-'
+                j -= 1
+            } else if (Y(i)(j) == max) {
+                pa = '-'
+                pb = B.charAt(j-1)
+                i -= 1
+            }
+
+            if(pa != pb) {
+                e += 1
+            } else {
+                c += 1
+            } 
+ 
+            xSeq = pa + xSeq
+            ySeq = pb + ySeq
+      
+            max = math.max(M(i)(j),math.max(X(i)(j),Y(i)(j)))
+        } while(max > 0)
+
+        out += ( new Alignment(seqA,seqB,xSeq,ySeq,(i,j),opt,c,e))
+        }
+        
+        return out
+    }
 }
 
 
