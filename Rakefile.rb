@@ -259,15 +259,20 @@ end
 #  each set of class files is generated in the proper order
 #  and we can assemble a coherent jar out of the thing. 
 
-file "#{CF}/KmerTable.class" => ["scala"]
+file "#{CF}/ObjectStore.class" => ["scala"]
+
+file "#{CF}/KmerTable.class" => ["scala",
+                                 "#{CF}/ObjectStore.class"]
 
 
 file "#{CF}/BioLibs.class" => ["scala",
-                               "#{CF}/KmerTable.class"]
+                               "#{CF}/KmerTable.class",
+                               "#{CF}/ObjectStore.class"]
 
 file "#{CF}/Project4.class" => ["scala",
                                 "#{CF}/BioLibs.class",
-                                "#{CF}/KmerTable.class"]
+                                "#{CF}/KmerTable.class",
+                                "#{CF}/ObjectStore.class"]
 
 # FIXME TODO FIXME TODO FIXME TODO FIXME TODO
 # Below this is the old rakefile commented out

@@ -12,11 +12,38 @@ class KmerTable {
 
     var KmerData = new mutable.HashMap[String,mutable.HashSet[Int]]()
     var AlignData = new mutable.HashMap[Int,mutable.HashMap[Int,Int]]()
-    var SequenceData = new mutable.HashMap[Int,String]()
+    var SequenceData = new mutable.HashMap[Int,Sequence]()
 
-    def addKmerSet( id : Int, seq : String, kmerSet : Set[String] ) {
+    def addPairAlignment( idA : Int , idB : Int ) {
+        val n = math.min(idA,idB)
+        val m = math.max(idA,idB)
+        if(n != m) {
+            if (! AlignData.contains(n)) {
+                AlignData += ((n, new mutable.HashMap[Int,Int]()))
+            }
 
-        SequenceData += ((id , seq))
+            if (! AlignData.apply(n).contains(m)) {
+                AlignData.apply(n).put(m,0)
+            }
+
+            AlignData.apply(n).put(m,AlignData.apply(n).apply(m) + 1)
+        }
+    }
+
+    def calculatePairAlignments() {
+        for((_,s) <- KmerData) {
+            val ar = s.toArray
+            for( i <- 1 until ar.length) {
+                for( j <- (i + 1) until ar.length ) {
+                    addPairAlignment(ar(i),ar(j))
+                }
+            }
+        }
+    }
+
+    def addKmerSet( seq : Sequence, kmerSet : Set[String] ) {
+
+        SequenceData += ((seq.id, seq))
 
         for (s <- kmerSet) {
 
@@ -24,7 +51,7 @@ class KmerTable {
                 KmerData += ((s, new mutable.HashSet[Int]()))
             }
       
-            KmerData.apply(s).add(id)
+            KmerData.apply(s).add(seq.id)
         }
     }
 
@@ -52,21 +79,28 @@ class KmerTable {
         return hist
     }
 
-    def dispatchCollisions( bounds : (Int,Int) , act : ((Int,String),(Int,String)) => _) {
-        var collisionSet = new mutable.HashSet[(Int,Int)]()
-        for ((k,ss) <- KmerData) {
-            var arr = ss.toArray
-            if ((arr.size >= bounds._1) && (arr.size <= bounds._2)) {
-                for (i <- 0 until arr.size) {
-                    for( j <- (i + 1) until arr.size) {
-                        var n = min(arr(i),arr(j))
-                        var x = max(arr(i),arr(j))
-                        if(!collisionSet.contains((n,x))) {
-                            collisionSet += ((n,x))
-                            act((n,SequenceData.apply(n)),(x,SequenceData(x)))
-                        }
-                    }
+    def dispatchCollisions( minCollision : Int , act : (Sequence,Sequence) => _) {
+        calculatePairAlignments()
+        for ((i,s) <- AlignData) {
+            for ((j,count) <- s) {
+                if (count > minCollision) {
+                    act(SequenceData.apply(i),SequenceData.apply(j))
                 }
+            }
+        }
+    }
+
+    def dispatchCollisionBlocks( minCollision : Int , act : (Sequence,Set[Sequence]) => _) {
+        calculatePairAlignments()
+        for ((i,s) <- AlignData) {
+            var set = mutable.HashSet[Sequence]()
+            for ((j,count) <- s) {                
+                if (count > minCollision) {
+                    set += SequenceData.apply(j)
+                }
+            }
+            if( set.size >= 1) {
+                act(SequenceData.apply(i),set)
             }
         }
     }

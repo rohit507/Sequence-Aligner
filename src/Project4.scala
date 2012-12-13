@@ -11,18 +11,14 @@ import java.util.Random
 
 import scala.collection._
 import scala.collection.immutable.StringOps
-import scala.collection.immutable._
 import scala.actors._
 import scala.actors.Futures._
 import scala.math._
 
 object Project4 {
 
-    type Alignment = (String,String,Int,Int,Int,Int)
-    type Overlap = (Char,(Int,Int),Int,Int,Int)
-
     var rand = new Random(System.currentTimeMillis())
-    var bounds = (2,17)
+    var bounds = (2,20)
 
 /*  ======== Defaults =========
     min overlap length = 40 
@@ -44,19 +40,31 @@ object Project4 {
     def main(args: Array[String]) {
         var alignSettings = readArgs(args)
 
-        action match {
+       /* action match {
             case "calc-overlaps" =>
-            case "test-overlaps" =>
-                if stAlign {
+                calculateOverlaps(input,alignSettings, (o: Overlap) => {
+                   if(o.valid(alignSettings)) {
+                        println(o.print())
+                   }
+                })
+           case "test-overlaps" =>
+                if (stAlign) {
                     testOverlap(input,alignSettings,debugAll)
                 } else {
                     testFutureOverlap(input,alignSettings,debugAll)
                 }
+                System.exit(0) 
+            case "test-kmer-cover" => 
+                testKmerCover(input)
                 System.exit(0)
-            case "test-kmer-cover" =>
-                printKmerCover(input)
+            case "test-dispatch-collisions" => */
+                var table = generateKmerTable(input)
+                testDispatchCollisions(table,alignSettings)
                 System.exit(0)
-        }
+          /*  case "test-fasta-read" => 
+                testFastaRead(input)
+                System.exit(0)
+        }*/
     }
 
     def readArgs(args: Array[String]) : AlignSettings = {
@@ -69,6 +77,7 @@ object Project4 {
         var maxIgnore = 90
         var gapOpen = -200
         var gapExtend = -20
+        var minCollisions = -1
 
         while (i < args.length) {
             args(i) match {
@@ -85,25 +94,31 @@ object Project4 {
                     input = args(i + 1) 
                     i += 2
                 case "--match" =>
-                    mat = args(i + 1).toInt
+                    mat = math.abs(args(i + 1).toInt)
                     i += 2
                 case "--mismatch" =>
-                    mism = args(i + 1).toInt
+                    mism = -math.abs(args(i + 1).toInt)
                     i += 2
                 case "--min-overlap" => 
-                    minOverlap = args(i + 1).toInt
+                    minOverlap = math.abs(args(i + 1).toInt)
                     i += 2
                 case "--min-identity" => 
                     minIdentity = args(i + 1).toFloat
+                    if (minIdentity >= 1) {
+                        minIdentity *= .01f
+                    }
+                    i += 2
+                case "--min-collisions" =>
+                    minCollisions = math.abs(args(i + 1).toInt)
                     i += 2
                 case "-gO" | "--gap-open" =>
-                    gapOpen = args(i + 1).toInt
+                    gapOpen = -math.abs(args(i + 1).toInt)
                     i += 2
                 case "-gE" | "--gap-extend" =>
-                    gapExtend = args(i + 1).toInt
+                    gapExtend = -math.abs(args(i + 1).toInt)
                     i += 2
                 case "--max-ignore" =>
-                    maxIgnore = args(i + 1).toInt
+                    maxIgnore = math.abs(args(i + 1).toInt)
                     i += 2
                 case "--st-hash" =>
                     stHash = true
@@ -123,10 +138,16 @@ object Project4 {
                 case "--test-overlaps" =>
                     action = "test-overlaps"
                     i += 1
+                case "--test-dispatch-collisions" =>
+                    action = "test-dispatch-collisions"
+                    i += 1
                 case "--test-kmer-cover" =>
                     action = "test-kmer-cover"
                     i += 1
-                dase "--debug-all" =>
+                case "--test-fasta-read" =>
+                    action = "test-fasta-read"
+                    i += 1
+                case "--debug-all" =>
                     debugAll = true
                     i += 1 
                 case _ =>
@@ -138,7 +159,7 @@ object Project4 {
         var compFunc = simpleMatch(mat,mism)
 
         if (hoxd != "") {
-            compFunc = readHoxd(hoxd) 
+            compFunc = readHOXD(hoxd) 
         }
 
         if (input == "") {
@@ -146,8 +167,12 @@ object Project4 {
             System.exit(-1)
         }
 
+        if (minCollisions <= 0) {
+            minCollisions = minOverlap - 2*kSize
+        }
+
         return new AlignSettings(compFunc,gapOpen,gapExtend,minOverlap,
-                                 minIdentity,maxIgnore)
+                                 minIdentity,maxIgnore,minCollisions)
  
     }
 
@@ -159,72 +184,122 @@ object Project4 {
                 "   See README file for details   \n")
     }
 
-    def calculateOverlaps(file : String, algnStngs : AlignSettings,
-                             act : (Overlap,Alignment) => _) {
-        var ktab = generateKmerTable(file,kSize,false)
-        var que = mutable.Queue[Future[(Overlap,Alignment)]]()
-              
-        ktab.dispatchCollisions(bounds,(seqA : (Int,String) ,seqB : (Int,String)) => {
-            que += future {
-                val align = BioLibs.generateLocalAlignment(seqA._2,seqB._2,algnStngs)
-                (BioLibs.generateOverlap(seqA,seqB,align,algnStngs),align)
+    // just prints the first few bits of data as the fasta file is being read
+    def testFastaRead(file : String) {
+        var i = 0
+        readSeq(file, (s : Sequence) => {
+            i += 1
+            if (i <= 10) {
+                println("id : " + s.id)
+                println("seq: " + s.seq)
+                println("")
             }
         })
+    } 
 
-        for (f <- que) {
-            var t = f.apply()
-            act(t._1,t._2)
+    // tests a variety of kmer sizes and prints match data
+    def testKmerCover( file : String ) {
+        for (i <- 0 to 25) {
+            val possible = math.pow(4,i) 
+            kSize = i
+            val tab = generateKmerTable(file)
+            val uniques = tab.uniqueKmers()
+            val ratio = (uniques.toFloat) / (possible.toFloat) 
+            println("Kmer Size : " + i )
+            println("  uniques : " + uniques )
+            println("  ratio   : " + ratio )
+            var collisions = tab.kmerCollisionHistogram()
+            var keys = collisions.keySet.toArray.sortWith(_<_)
+            var o = ""
+            for (k <- keys ) {
+                o = o + "          [" + k + " -> " +
+                      collisions.apply(k) + "]\n"
+            }
+            println("  [ number of collisions -> count of " +
+                    "seqs with that many collisions ] :\n" + o )
+            
         }
     }
 
-    def testOverlap( file : String,algnStngs : AlignSettings,  all : Boolean) {
-        var ktab = generateKmerTable(file,kSize,false)
+    def testDispatchCollisions( table : KmerTable, settings : AlignSettings) {
         var i = 0
-        ktab.dispatchCollisions(bounds,(seqA : (Int,String) ,seqB : (Int,String)) => {
+        var comp = mutable.HashSet[(Int,Int)]()
+        table.dispatchCollisions(settings.minCollisions, (A : Sequence, B : Sequence) => {
             i += 1
-            val align = BioLibs.generateLocalAlignment(seqA._2,seqB._2,algnStngs) 
-            val ovl = BioLibs.generateOverlap(seqA,seqB,align,algnStngs)
-            if(all || ( align._4 > 0 ) || (i < 10) || (align._6 > 0)) {
-            println( i + " : Seqs " + seqA._1 + " and " + seqB._1 + " : ")
-            println( "   Seq A : " + seqA._2 + ("".padTo(- ovl._5,'-')))
-            println( "   Seq B : " + ("".padTo(- ovl._4,'-')) + seqB._2)
-            println( "   Ali A : " + align._1)
-            println( "   Ali B : " + align._2)
-            println( "   Align : " + align)
-            println( "   Ovrlp : " + ovl) }
+            if(comp.contains((A.id,B.id))) {
+                println( "!!!! Collission " + A.id + "<->" + B.id +
+                         " Dispatched more than once. " )
+            }
+            comp += ((A.id,B.id))
+            println( " Dispatched Coll : " + i + " - " + A.id + "<->" + B.id)
         })
     }
 
-    // Multithreaded futures overlap is faster than the single thread version
-    //  by more than a factor of 2. (^_^)
-    def testFutureOverlap( file : String, algnStngs : AlignSettings, all : Boolean) {
-        var ktab = generateKmerTable(file,kSize,false)
-        var i = 0
-        var que = mutable.Queue[Future[(Int,(Int,String),(Int,String),Alignment,Overlap)]]()
-              
-        ktab.dispatchCollisions(bounds,(seqA : (Int,String) ,seqB : (Int,String)) => {
-            i += 1
-            que += future {
-                val align = BioLibs.generateLocalAlignment(seqA._2,seqB._2,algnStngs)
-                (i,seqA,seqB,align,BioLibs.generateOverlap(seqA,seqB,align,algnStngs)) 
-            }
+    def generateKmerTable(file : String) : KmerTable = {
+        if (stHash) {
+            return genSTKmerTable(file)
+        } else {
+            return genMTKmerTable(file)
+        }
+    }
+
+    def genSTKmerTable(file : String) : KmerTable = {
+        var kmerTable = new KmerTable()
+
+        readSeq(file,(seq : Sequence) => {
+           var hSet = generateKmerSet(kSize,seq.seq)
+           if (debug) { println("Generated Kmers for Seq : " + seq.id )}
+           kmerTable.addKmerSet(seq,hSet)
+           if (debug) { println("Added Kmer Set : " + seq.id) }
         })
 
-        for (f <- que) {
+        return kmerTable
+    }
+
+    def genMTKmerTable(file : String) : KmerTable = {
+        var kmerSets = mutable.Queue[Future[(Sequence,Set[String])]]()
+        var kmerTable = new KmerTable()
+
+        readSeq(file,(seq : Sequence) => {
+           if (debug) { println("Read Seq : " + seq.id) }
+           val f = future {
+                if (debug) { println("Start Processing Seq : " + seq.id)}
+                var hSet = generateKmerSet(kSize,seq.seq)
+                if (debug) { println("Generated Kmers for Seq : " + seq.id +
+                                " on thread " + Thread.currentThread.getName ) }
+                (seq,hSet)
+           }
+           kmerSets += f
+        })
+
+        kmerSets.foreach { f =>
             f.apply() match {
-                case (i,seqA,seqB,align,ovl) =>
-                    if(all || ( align._4 > 0 ) || (i < 10) || (align._6 > 0)) {
-                        println( i + " : Seqs " + seqA._1 + " and " + seqB._1 + " : ")
-                        println( "   Seq A : " + seqA._2 + ("".padTo(- ovl._5,'-')))
-                        println( "   Seq B : " + ("".padTo(- ovl._4,'-')) + seqB._2)
-                        println( "   Ali A : " + align._1)
-                        println( "   Ali B : " + align._2)
-                        println( "   Align : " + align)
-                        println( "   Ovrlp : " + ovl) 
-                    }
-                case _ => println( "Error in overlap future" )
+                case (seq,set) => 
+                    kmerTable.addKmerSet(seq,set)
+                    if (debug) { println("Added Kmer Set : " + seq.id)}
+                case _ => 
+                    if (debug) { println("Error in Future Return")}
             }
         }
+        
+        return kmerTable
     }
 
+    def genAlignment(table : KmerTable,settings : AlignSettings,
+                        filter : Boolean) : Set[Alignment] = {
+        //if (stAlign) {
+            return genSTAlign(table,settings,filter)
+        //} else {
+        //    return genMTAlign(table,settings,filter)
+        //}
+    }
+
+    def genSTAlign(table : KmerTable,settings : AlignSettings,
+                     filter : Boolean) : Seq[Alignment] = {
+        var aligns = mutable.Queue[Alignment]()
+        table.dispatchCollisions(settings.minCollisions, (A : Sequence, B : Sequence) => {
+            
+        })
+    } 
+    
 }
