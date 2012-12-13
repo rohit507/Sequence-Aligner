@@ -46,7 +46,7 @@ class Alignment( sA : Sequence, sB : Sequence, oA : String , oB : String,
     val errRatio = (correct.toFloat) / (correct.toFloat + error.toFloat)
 
     def valid(settings : AlignSettings) : Boolean = {
-        return (errRatio < settings.minIdentity) &&
+        return (errRatio > settings.minIdentity) &&
                (alignA.length > settings.minOverlap) &&
                (((start._1 == 0) && (seqB.seq.length == end._2))  ||
                 ((start._2 == 0) && (seqA.seq.length == end._1)))
@@ -62,8 +62,8 @@ class Overlap(alg : Alignment) {
     val adj = 'N'
     val rds = (align.seqA.id,align.seqB.id)
     val scr = 0
-    val ahg = - align.start._1 + align.start._2
-    val bhg = - align.seqB.seq.length + align.seqA.seq.length - ahg
+    val ahg = align.start._1 - align.start._2
+    val bhg = align.seqB.seq.length - align.seqA.seq.length + ahg
 
     def print() : String = {
         return   "{OVL" +

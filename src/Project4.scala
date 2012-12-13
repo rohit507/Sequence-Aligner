@@ -40,31 +40,30 @@ object Project4 {
     def main(args: Array[String]) {
         var alignSettings = readArgs(args)
 
-       /* action match {
+        action match {
             case "calc-overlaps" =>
-                calculateOverlaps(input,alignSettings, (o: Overlap) => {
-                   if(o.valid(alignSettings)) {
-                        println(o.print())
-                   }
-                })
-           case "test-overlaps" =>
-                if (stAlign) {
-                    testOverlap(input,alignSettings,debugAll)
-                } else {
-                    testFutureOverlap(input,alignSettings,debugAll)
-                }
+                var table = generateKmerTable(input)
+                println(calcOverlaps(genAlignment(table,alignSettings,true),alignSettings))
                 System.exit(0) 
             case "test-kmer-cover" => 
                 testKmerCover(input)
                 System.exit(0)
-            case "test-dispatch-collisions" => */
+            case "test-dispatch-collisions" => 
                 var table = generateKmerTable(input)
                 testDispatchCollisions(table,alignSettings)
-                System.exit(0)
-          /*  case "test-fasta-read" => 
+                System.exit(0) 
+            case "test-alignment" => 
+                var table = generateKmerTable(input)
+                testAlignment(genAlignment(table,alignSettings,false),alignSettings)
+                System.exit(0) 
+            case "test-overlaps" => 
+                var table = generateKmerTable(input)
+                testOverlaps(genAlignment(table,alignSettings,false),alignSettings)
+                System.exit(0) 
+            case "test-fasta-read" => 
                 testFastaRead(input)
                 System.exit(0)
-        }*/
+        }
     }
 
     def readArgs(args: Array[String]) : AlignSettings = {
@@ -138,6 +137,9 @@ object Project4 {
                 case "--test-overlaps" =>
                     action = "test-overlaps"
                     i += 1
+                case "--test-alignment" =>
+                    action = "test-alignment"
+                    i += 1
                 case "--test-dispatch-collisions" =>
                     action = "test-dispatch-collisions"
                     i += 1
@@ -168,7 +170,7 @@ object Project4 {
         }
 
         if (minCollisions <= 0) {
-            minCollisions = minOverlap - 2*kSize
+            minCollisions = minOverlap - 3*kSize
         }
 
         return new AlignSettings(compFunc,gapOpen,gapExtend,minOverlap,
@@ -235,6 +237,46 @@ object Project4 {
         })
     }
 
+    def testAlignment(alignments : Seq[Alignment],settings : AlignSettings) {
+        var i = 0;
+        for (a <- alignments) {
+            i += 1
+            println(" Alignment " + i + " : " + a.seqA.id + " <-> " + a.seqB.id )
+            println("   Seq A     : " + a.seqA.seq)
+            println("   Seq B     : " + a.seqB.seq)
+            println("   Overlap A : " + a.alignA)
+            println("   Overlap B : " + a.alignB)
+            println("   Start     : " + a.start)
+            println("   End       : " + a.end)
+            println("   Error Rat : " + a.errRatio)
+            println("   is Valid? : " + a.valid(settings))
+            println("")                       
+        }
+    }
+
+    def testOverlaps(alignments : Seq[Alignment],settings : AlignSettings) {
+        var i = 0;
+        for (a <- alignments) {
+            var o = a.getOverlap()
+            i += 1
+            println(" Overlap " + i + " : " + a.seqA.id + " <-> " + a.seqB.id )
+            if (o.ahg >= 0) {
+                println("   Seq A   : " + a.seqA.seq + ("").padTo(o.bhg,'-'))
+                println("   Seq B   : " + ("").padTo(o.ahg,'-') + a.seqB.seq )
+            } else {
+                println("   Seq A   : " + ("").padTo(-o.ahg,'-') + a.seqA.seq)
+                println("   Seq B   : " + a.seqB.seq + ("").padTo(-o.bhg,'-'))
+            }
+            println("   Ahg     : " + o.ahg)
+            println("   Bhg     : " + o.bhg)
+            println("   Start   : " + a.start)
+            println("   End     : " + a.end)
+            println("   Error   : " + a.errRatio)
+            println("   Valid?  : " + o.valid(settings))                       
+        }
+
+    }
+
     def generateKmerTable(file : String) : KmerTable = {
         if (stHash) {
             return genSTKmerTable(file)
@@ -286,20 +328,51 @@ object Project4 {
     }
 
     def genAlignment(table : KmerTable,settings : AlignSettings,
-                        filter : Boolean) : Set[Alignment] = {
-        //if (stAlign) {
+                        filter : Boolean) : Seq[Alignment] = {
+        if (stAlign) {
             return genSTAlign(table,settings,filter)
-        //} else {
-        //    return genMTAlign(table,settings,filter)
-        //}
+        } else {
+            return genMTAlign(table,settings,filter)
+        }
     }
 
     def genSTAlign(table : KmerTable,settings : AlignSettings,
                      filter : Boolean) : Seq[Alignment] = {
         var aligns = mutable.Queue[Alignment]()
         table.dispatchCollisions(settings.minCollisions, (A : Sequence, B : Sequence) => {
-            
+            var alg =  generateLocalAlignment(A,B,settings)    
+            if ((! filter) || (alg.valid(settings))) {
+                aligns += alg
+            }
         })
-    } 
+        return aligns
+    }
+
+    def genMTAlign(table : KmerTable,settings : AlignSettings,
+                     filter : Boolean) : Seq[Alignment] = {
+        var futures = mutable.Queue[Future[Alignment]]()
+        var aligns = mutable.Queue[Alignment]()
+        table.dispatchCollisions(settings.minCollisions, (A : Sequence, B : Sequence) => {
+            futures += future { generateLocalAlignment(A,B,settings)}
+        })
+
+        for (f <- futures) {
+            aligns += f.apply()
+        }
+
+        return aligns
+    }
+
+    def calcOverlaps(alignments : Seq[Alignment],settings : AlignSettings) : String = {
+        var out = ""
+        for (a <- alignments) {
+            var o = a.getOverlap()
+            if( o.valid(settings)) {
+                out += o.print() + "\n"
+            }                
+        }
+        return out
+    }
+
     
 }

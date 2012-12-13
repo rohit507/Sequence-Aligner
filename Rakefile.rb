@@ -72,8 +72,9 @@ namespace :run do
 
     task :default => :scala
 
-    task :scala => PS do 
-        sh "#{BF}/#{SE} #{PS} -i #{SmallInput}"
+    task :scala => PS do
+        act = ENV['act']||"" 
+        sh "#{BF}/#{SE} #{PS} #{act} -i #{SmallInput}"
     end
 
 end

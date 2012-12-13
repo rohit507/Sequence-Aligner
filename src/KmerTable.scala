@@ -90,17 +90,21 @@ class KmerTable {
         }
     }
 
-    def dispatchCollisionBlocks( minCollision : Int , act : (Sequence,Set[Sequence]) => _) {
+    def dispatchCollisionBlocks( minCollision : Int , act : 
+                                (Int,Sequence,Set[Sequence]) => _) {
         calculatePairAlignments()
         for ((i,s) <- AlignData) {
             var set = mutable.HashSet[Sequence]()
+            var max = 0
             for ((j,count) <- s) {                
                 if (count > minCollision) {
-                    set += SequenceData.apply(j)
+                    val t = SequenceData.apply(j)
+                    set += t
+                    max = math.max(max,t.seq.length)
                 }
             }
             if( set.size >= 1) {
-                act(SequenceData.apply(i),set)
+                act(max,SequenceData.apply(i),set)
             }
         }
     }
