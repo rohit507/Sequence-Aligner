@@ -5,6 +5,7 @@
 
 cls/
 scala/
+tmp/
 *.class
 *.swp
 *.swo

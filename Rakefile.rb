@@ -13,6 +13,7 @@ SE = "scala"    # Scala Executor
 SF = "src"      # Source Folder
 CF = "cls"      # Classfile Folder
 LF = "lib"      # Libraries Folder
+TF = "tmp"      # Temp Folder
 BF = "bin"      # Binaries Folder (where we keep symlinks to
                 #                   useful applications) 
 
@@ -33,6 +34,19 @@ Classes = Sources.ext(".class")
 
 SCOpts = "-deprecation -unchecked"  # Scala Compiler Options
 JavaOpts = "-Xmx"                   # Java Runtime Options
+
+SmallInput = "amos/small/crp177.seq"    # The Short Test Sequence
+LargeInput = "amos/c_ruddii.seq"        # The Long Test Sequence
+
+def print_time_diff(diff)
+    hrs = (diff / (60 * 60)).floor
+    diff = diff % (60 * 60)
+    min = (diff / 60).floor
+    diff = diff % 60
+    sec = diff.floor
+    milli = ((diff % 1) * 1000).floor
+    return "#{hrs}h:#{min}m:#{sec}s:#{milli}ms"
+end
 
 # Task to take the large scala folder and regenerate the
 #  entire useful directory structure. This is nice if you
@@ -58,7 +72,84 @@ namespace :run do
 
     task :scala => PS do 
         sh "#{BF}/#{SE} " +
-           " #{PS} amos/small/crp177.seq"
+           " #{PS} #{SmallInput}"
+    end
+
+end
+
+# Run the full pipeline in a sensible fashion
+
+task :pipeline => "pipeline:default"
+
+namespace :pipeline do
+
+    task :amos => "amos:default"
+
+    namespace :amos do
+
+ #      #COMMANDS:
+ #      #create AMOS bank from input sequence 
+ #      toAmos_new -s c_ruddii.seq -b c_ruddii.bnk
+ #      #assemble using AMOS hash-overlap
+ #      #NOTE: this is the step you are replacing
+ #      hash-overlap c_ruddii.bnk -B -x 0.04 -o 40 
+ #      #perform layout/contigging
+ #      tigger -b c_ruddii.bnk
+ #      #call consensus
+ #      make-consensus -e 0.04 -o 40 -B -b c_ruddii.bnk 
+ #      #output final assembly
+ #      bank2fasta -b c_ruddii.bnk > c_ruddii.fasta
+
+        task :default do
+            run_amos_pipe(SmallInput,true,true)
+        end
+
+        def run_amos_pipe(file,time,cat)
+            rm_rf(TF)
+            mkdir(TF)
+            if File.exists?(file) then
+                cp(file,TF)
+            else 
+                raise "No #{file} exists."
+            end
+            raw = file.pathmap("%n")
+            seq = "#{TF}/" + raw.ext("seq")
+            bnk = "#{TF}/" + raw.ext("bnk")
+            fst = "#{TF}/" + raw.ext("fasta")
+            strTime = Time.now()
+            sh("#{BF}/toAmos_new -s #{seq} -b #{bnk}")
+            bnkTime = Time.now()
+            sh("#{BF}/hash-overlap #{bnk} -B -x 0.04 -o 40")
+            ovrTime = Time.now()
+            sh("#{BF}/tigger -b #{bnk}")
+            tigTime = Time.now()
+            sh("#{BF}/make-consensus -e 0.04 -o 40 -B -b #{bnk}")
+            cnsTime = Time.now()
+            sh("#{BF}/bank2fasta -b #{bnk} > #{fst}")
+            fstTime = Time.now()
+
+            if cat then
+                sh("cat #{fst}")
+            end
+
+            if time then
+                puts ""
+                puts "============ Time Taken ============="
+                puts "Total Time            : #{print_time_diff(fstTime - strTime)}"
+                puts "  Bank Creation Time  : #{print_time_diff(bnkTime - strTime)}"
+                puts "  Overlap Time        : #{print_time_diff(ovrTime - bnkTime)}"
+                puts "  Contigger Time      : #{print_time_diff(tigTime - ovrTime)}"
+                puts "  Consensus Time      : #{print_time_diff(cnsTime - tigTime)}"
+                puts "  Fasta Creation Time : #{print_time_diff(fstTime - cnsTime)}"
+                puts ""
+            end
+        end
+    end
+
+    task :project => "project:default"
+
+    namespace :project do
+
     end
 
 end
@@ -72,7 +163,7 @@ task :clean => "clean:default"
 
 namespace :clean do
 
-    task :default => [:classes,:jars]
+    task :default => [:classes,:jars,:temp]
 
     task :full do
         rm_rf 'scala/'
@@ -81,6 +172,10 @@ namespace :clean do
     task :classes do
         rm_rf 'cls/'
         mkdir 'cls'
+    end
+
+    task :temp do
+        rm_rf 'tmp/'
     end
 
     task :jars do 
