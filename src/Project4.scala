@@ -25,12 +25,77 @@ object Project4 {
     var kSize = 12
     var debug = false
     var bounds = (2,17)
-    var algnStngs = new AlignSettings(simpleMatch(3,-4),-8,-2,20)
+    var minCorrect = 0.98
+    var algnStngs = new AlignSettings(simpleMatch(95,-70),-200,-20,40)
+
+/*  ======== Defaults =========
+    min overlap length = 40 
+    min % id= 98 or 99% 
+    max region ignored= 60 
+    gap open = -200, gap extend = -20.
+    
+    And I'd like you to continue to use HOXD 
+    (or BLOSUM) for match/mismatch. */
 
     def main(args: Array[String]) {
         calculateOverlaps(args(0),(ovl : Overlap) => {
             println(BioLibs.printOverlap(ovl))
         })
+    }
+
+    def readArgs(args: Array[String]) : AlignSettings {
+        var i = 0
+        var hoxd = ""
+        var input = ""
+        var output = ""
+        var minOverlap = 0
+        var minIdentity = 0.0
+        var maxIgnore = 90
+        var gapOpen = 0
+        var gapExtend = 0
+
+        while (i < args.length) {
+            args(i) match {
+                case "-m" | "--matrix" => 
+                    hoxd = args(i + 1) // Matrix
+                    i += 2
+                case "-k" | "--kmer-size" => 
+                    kSize = args(i + 1).toInt // kmers
+                    i += 2
+                case "-i" | "--input" => 
+                    input = args(i + 1) 
+                    i += 2
+                case "-o" | "--output" => 
+                    output = args(i + 1)
+                    i += 2
+                case "--min-overlap" => 
+                    minOverlap = args(i + 1).toInt
+                    i += 2
+                case "--min-identity" => 
+                    minIdentity = args(i + 1).toFloat
+                    i += 2
+                case "-gO" | "--gap-open" =>
+                    gapOpen = args(i + 1).toInt
+                    i += 2
+                case "-gE" | "--gap-extend" =>
+                    gapExtend = args(i + 1).toInt
+                    i += 2
+                case "--max-ignore" =>
+                    maxIgnore = args(i + 1).toInt
+                    i += 2
+                case _ =>
+                    println("Invalid Argument")
+                    System.exit(1)
+            }
+        } 
+    }
+
+    def printHelp() {
+        println(" Rohit Ramesh :         Cmsc 423 \n" +
+                " Project 4 : Sequence Overlapper \n" +
+                "                                 \n" +
+                " [Usage]                         \n" +
+                "   See README file for details   \n")
     }
 
     def calculateOverlaps(file : String, act : (Overlap) => _) {

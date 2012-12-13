@@ -38,6 +38,8 @@ JavaOpts = "-Xmx"                   # Java Runtime Options
 SmallInput = "amos/small/crp177.seq"    # The Short Test Sequence
 LargeInput = "amos/c_ruddii.seq"        # The Long Test Sequence
 
+# Utility function for time displays
+
 def print_time_diff(diff)
     hrs = (diff / (60 * 60)).floor
     diff = diff % (60 * 60)
@@ -71,8 +73,7 @@ namespace :run do
     task :default => :scala
 
     task :scala => PS do 
-        sh "#{BF}/#{SE} " +
-           " #{PS} #{SmallInput}"
+        sh "#{BF}/#{SE} #{PS} #{SmallInput}"
     end
 
 end
@@ -102,6 +103,10 @@ namespace :pipeline do
 
         task :default do
             run_amos_pipe(SmallInput,true,true)
+        end
+
+        task :large do
+            run_amos_pipe(LargeInput,true,false)
         end
 
         def run_amos_pipe(file,time,cat)
@@ -150,6 +155,54 @@ namespace :pipeline do
 
     namespace :project do
 
+        task :default do
+            run_project_pipe(SmallInput,true,true)
+        end
+
+        def run_project_pipe(file,time,cat)
+            rm_rf(TF)
+            mkdir(TF)
+            if File.exists?(file) then
+                cp(file,TF)
+            else 
+                raise "No #{file} exists."
+            end
+            raw = file.pathmap("%n")
+            seq = "#{TF}/" + raw.ext("seq")
+            ovl = "#{TF}/" + raw.ext("ovl")
+            bnk = "#{TF}/" + raw.ext("bnk")
+            fst = "#{TF}/" + raw.ext("fasta")
+            strTime = Time.now()
+            sh("#{BF}/toAmos_new -s #{seq} -b #{bnk}")
+            bnkTime = Time.now()
+                # Place your overlapper here
+            ovrTime = Time.now()
+            sh("#{BF}/bank-transact -b #{bnk} -m #{ovl}")
+            trnTime = Time.now()
+            sh("#{BF}/tigger -b #{bnk}")
+            tigTime = Time.now()
+            sh("#{BF}/make-consensus -e 0.04 -o 40 -B -b #{bnk}")
+            cnsTime = Time.now()
+            sh("#{BF}/bank2fasta -b #{bnk} > #{fst}")
+            fstTime = Time.now()
+
+            if cat then
+                sh("cat #{fst}")
+            end
+
+            if time then
+                puts ""
+                puts "============ Time Taken ============="
+                puts "Total Time               : #{print_time_diff(fstTime - strTime)}"
+                puts "  Bank Creation Time     : #{print_time_diff(bnkTime - strTime)}"
+                puts "  Overlap Time           : #{print_time_diff(ovrTime - bnkTime)}"
+                puts "  Bank Transaction Time  : #{print_time_diff(trnTime - ovrTime)}"
+                puts "  Contigger Time         : #{print_time_diff(tigTime - trnTime)}"
+                puts "  Consensus Time         : #{print_time_diff(cnsTime - tigTime)}"
+                puts "  Fasta Creation Time    : #{print_time_diff(fstTime - cnsTime)}"
+                puts ""
+            end
+        end
     end
 
 end
