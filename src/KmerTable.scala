@@ -10,9 +10,9 @@ import scala.math
 
 class KmerTable {
 
-    var KmerData    : Map[String,mutable.HashSet[Int]] = 
-                new mutable.HashMap[String,mutable.HashSet[Int]]()
-    var SequenceData : Map[Int,String] = new mutable.HashMap[Int,String]()
+    var KmerData = new mutable.HashMap[String,mutable.HashSet[Int]]()
+    var AlignData = new mutable.HashMap[Int,mutable.HashMap[Int,Int]]()
+    var SequenceData = new mutable.HashMap[Int,String]()
 
     def addKmerSet( id : Int, seq : String, kmerSet : Set[String] ) {
 

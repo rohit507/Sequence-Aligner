@@ -37,9 +37,9 @@ object Project4 {
     var kSize = 12
     var action = "calc-overlaps"
     var input = ""
-    //var output = "STDOUT"
     var stHash = true
     var stAlign = false
+    var debugAll = false
 
     def main(args: Array[String]) {
         var alignSettings = readArgs(args)
@@ -47,6 +47,12 @@ object Project4 {
         action match {
             case "calc-overlaps" =>
             case "test-overlaps" =>
+                if stAlign {
+                    testOverlap(input,alignSettings,debugAll)
+                } else {
+                    testFutureOverlap(input,alignSettings,debugAll)
+                }
+                System.exit(0)
             case "test-kmer-cover" =>
                 printKmerCover(input)
                 System.exit(0)
@@ -78,9 +84,6 @@ object Project4 {
                 case "-i" | "--input" => 
                     input = args(i + 1) 
                     i += 2
-                //case "-o" | "--output" => 
-                //    output = args(i + 1)
-                //    i += 2
                 case "--match" =>
                     mat = args(i + 1).toInt
                     i += 2
@@ -123,6 +126,9 @@ object Project4 {
                 case "--test-kmer-cover" =>
                     action = "test-kmer-cover"
                     i += 1
+                dase "--debug-all" =>
+                    debugAll = true
+                    i += 1 
                 case _ =>
                     println("Invalid Argument")
                     System.exit(1)
@@ -221,23 +227,4 @@ object Project4 {
         }
     }
 
-    def printKmerCover( file : String ) {
-        for (i <- 0 to 20) {
-            generateKmerCover(file,i,false) match {
-                case (uniq,rat,tab) => println("Kmer Size : " + i )
-                                       println("  uniques : " + uniq )
-                                       println("  ratio   : " + rat )
-                                       var collisions = tab.kmerCollisionHistogram()
-                                       var keys = collisions.keySet.toArray.sortWith(_<_)
-                                       var o = ""
-                                       for (k <- keys ) {
-                                           o = o + "          [" + k + " -> " +
-                                               collisions.apply(k) + "]\n"
-                                       }
-                                       println("  [ number of collisions -> count of " +
-                                               "seqs with that many collisions ] :\n" + o )
-                case _ => println("error")
-            }
-        }
-    }
 }

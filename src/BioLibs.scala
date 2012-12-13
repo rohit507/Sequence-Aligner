@@ -299,6 +299,25 @@ object BioLibs {
                "\n}"
     }
      
+    def printKmerCover( file : String ) {
+        for (i <- 0 to 20) {
+            generateKmerCover(file,i,false) match {
+                case (uniq,rat,tab) => println("Kmer Size : " + i )
+                                       println("  uniques : " + uniq )
+                                       println("  ratio   : " + rat )
+                                       var collisions = tab.kmerCollisionHistogram()
+                                       var keys = collisions.keySet.toArray.sortWith(_<_)
+                                       var o = ""
+                                       for (k <- keys ) {
+                                           o = o + "          [" + k + " -> " +
+                                               collisions.apply(k) + "]\n"
+                                       }
+                                       println("  [ number of collisions -> count of " +
+                                               "seqs with that many collisions ] :\n" + o )
+                case _ => println("error")
+            }
+        }
+    }
 }
 
 class AlignSettings( subf : (Char,Char) => Int , gO : Int, gE : Int, mO : Int,
