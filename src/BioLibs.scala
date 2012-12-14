@@ -102,6 +102,33 @@ object BioLibs {
             }
     }
 
+    def defaultHOXD : (Char,Char) => Int = {
+        var costs = new mutable.HashMap[String,Int]()
+        costs += (("AA",91))
+        costs += (("AC",-114))
+        costs += (("AG",-31))
+        costs += (("AT",-123))
+
+        costs += (("CA",-114))
+        costs += (("CC",100))
+        costs += (("CG",-125))
+        costs += (("CT",-31))
+
+        costs += (("GA",-31))
+        costs += (("GC",-125))
+        costs += (("GG",100))
+        costs += (("GT",-114))
+
+        costs += (("TA",-123))
+        costs += (("TC",-31))
+        costs += (("TG",-114))
+        costs += (("TT",91))
+
+        return (a : Char, b : Char) => {
+            costs.apply(a.toString.toUpperCase + b.toString.toUpperCase)
+        }
+    }
+
     def simpleMatch( mat : Int, miss : Int) : (Char,Char) => Int = {
         return (a : Char, b : Char) => { if (a == b) mat else miss }
     }

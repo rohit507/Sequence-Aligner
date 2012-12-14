@@ -32,8 +32,10 @@ PJ = "Proj4.jar"        # Project 4 Java Standalone Executable
 Sources = FileList["#{SF}/*.scala"].gsub("#{SF}/","")
 Classes = Sources.ext(".class")
 
-SCOpts = "-deprecation -unchecked"  # Scala Compiler Options
-JavaOpts = "-Xmx"                   # Java Runtime Options
+SCOpts = "-deprecation -unchecked -optimize"  # Scala Compiler Options
+JavaOpts = ""                   # Java Runtime Options
+
+ENV['JAVA_OPTS'] = JavaOpts
 
 SmallInput = "amos/small/crp177.seq"    # The Short Test Sequence
 LargeInput = "amos/c_ruddii.seq"        # The Long Test Sequence
@@ -145,6 +147,10 @@ namespace :pipeline do
 
         task :default do
             run_project_pipe(SmallInput,true,true)
+        end
+
+        task :large do
+            run_project_pipe(LargeInput,true,false)
         end
 
         def run_project_pipe(file,time,cat)

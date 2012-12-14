@@ -4,7 +4,6 @@
     By Rohit Ramesh 
 */
  
-
 import BioLibs._
 
 import java.util.Random
@@ -36,9 +35,7 @@ object Project4 {
     var stHash = true
     var stAlign = false
     var blockAlign = true
-    var debugAll = false
     
-
     def main(args: Array[String]) {
         var alignSettings = readArgs(args)
 
@@ -53,7 +50,11 @@ object Project4 {
             case "test-dispatch-collisions" => 
                 var table = generateKmerTable(input)
                 testDispatchCollisions(table,alignSettings)
-                System.exit(0) 
+                System.exit(0)
+            case "test-block-dispatch" => 
+                var table = generateKmerTable(input)
+                testBlockDispatch(table,alignSettings)
+                System.exit(0)
             case "test-alignment" => 
                 var table = generateKmerTable(input)
                 testAlignment(genAlignment(table,alignSettings,false),alignSettings)
@@ -78,7 +79,8 @@ object Project4 {
         var maxIgnore = 90
         var gapOpen = -200
         var gapExtend = -20
-        var minCollisions = -1
+        var minCollisions = 2
+        var maxCollisions = 22
 
         while (i < args.length) {
             args(i) match {
@@ -111,6 +113,9 @@ object Project4 {
                     i += 2
                 case "--min-collisions" =>
                     minCollisions = math.abs(args(i + 1).toInt)
+                    i += 2
+                case "--max-collisions" =>
+                    maxCollisions = math.abs(args(i + 1).toInt)
                     i += 2
                 case "-gO" | "--gap-open" =>
                     gapOpen = -math.abs(args(i + 1).toInt)
@@ -151,6 +156,9 @@ object Project4 {
                 case "--test-dispatch-collisions" =>
                     action = "test-dispatch-collisions"
                     i += 1
+                case "--test-block-dispatch" =>
+                    action = "test-block-dispatch"
+                    i += 1
                 case "--test-kmer-cover" =>
                     action = "test-kmer-cover"
                     i += 1
@@ -158,7 +166,7 @@ object Project4 {
                     action = "test-fasta-read"
                     i += 1
                 case "--debug-all" =>
-                    debugAll = true
+                    debug = true
                     i += 1 
                 case _ =>
                     println("Invalid Argument")
@@ -166,7 +174,7 @@ object Project4 {
             }
         }
 
-        var compFunc = simpleMatch(mat,mism)
+        var compFunc = defaultHOXD
 
         if (hoxd != "") {
             compFunc = readHOXD(hoxd) 
@@ -177,12 +185,8 @@ object Project4 {
             System.exit(-1)
         }
 
-        if (minCollisions <= 0) {
-            minCollisions = minOverlap - 3*kSize
-        }
-
         return new AlignSettings(compFunc,gapOpen,gapExtend,minOverlap,
-                                 minIdentity,maxIgnore,minCollisions)
+                                 minIdentity,maxIgnore,minCollisions,maxCollisions)
  
     }
 
@@ -234,15 +238,47 @@ object Project4 {
     def testDispatchCollisions( table : KmerTable, settings : AlignSettings) {
         var i = 0
         var comp = mutable.HashSet[(Int,Int)]()
-        table.dispatchCollisions(settings.minCollisions, (A : Sequence, B : Sequence) => {
+        table.dispatchCollisions(settings.collBounds, (A : Sequence, B : Sequence) => {
             i += 1
             if(comp.contains((A.id,B.id))) {
                 println( "!!!! Collission " + A.id + "<->" + B.id +
                          " Dispatched more than once. " )
             }
             comp += ((A.id,B.id))
-            println( " Dispatched Coll : " + i + " - " + A.id + "<->" + B.id)
+            println( " Dispatched Coll : " + i + " - " + A.id + " <-> " + B.id)
         })
+    }
+
+    def testBlockDispatch( table : KmerTable , settings : AlignSettings) {
+        var i = 0
+        var comp = mutable.HashSet[(Int,Int)]()
+        var hist = mutable.HashMap[Int,Int]()
+        table.dispatchCollisionBlocks(settings.collBounds,
+                     (max : Int, A : Sequence, S : Seq[Sequence]) => {
+            for(B <- S) {
+                i += 1
+                if(comp.contains((A.id,B.id))) {
+                    println( "!!!! Collission " + A.id + "<->" + B.id +
+                            " Dispatched more than once. " )
+                }
+                comp += ((A.id,B.id))
+                println( " Dispatched Coll : " + i + " - " + A.id + " <-> " + B.id)
+            }
+            if(!hist.contains(S.size)){
+                hist += ((S.size,0))
+            }
+            hist += ((S.size,hist.apply(S.size) + 1))
+        })
+                                // :
+        println( "\n Histogram Of Relations : [Number of Aligns -> " +
+                 "Number of Seqs w/ that many Aligns]")
+        var keys = hist.keySet.toArray.sortWith(_<_)
+        var o = ""
+        for (k <- keys ) {
+            o = o + "          [" + k + " -> " +
+                      hist.apply(k) + "]\n"
+        }
+        println(o)
     }
 
     def testAlignment(alignments : Seq[Alignment],settings : AlignSettings) {
@@ -355,7 +391,7 @@ object Project4 {
     def genSingleSTAlign(table : KmerTable,settings : AlignSettings,
                      filter : Boolean) : Seq[Alignment] = {
         var aligns = mutable.Queue[Alignment]()
-        table.dispatchCollisions(settings.minCollisions, (A : Sequence, B : Sequence) => {
+        table.dispatchCollisions(settings.collBounds, (A : Sequence, B : Sequence) => {
             var alg =  generateLocalAlignment(A,B,settings)    
             if ((! filter) || (alg.valid(settings))) {
                 aligns += alg
@@ -368,7 +404,7 @@ object Project4 {
                      filter : Boolean) : Seq[Alignment] = {
         var futures = mutable.Queue[Future[Alignment]]()
         var aligns = mutable.Queue[Alignment]()
-        table.dispatchCollisions(settings.minCollisions, (A : Sequence, B : Sequence) => {
+        table.dispatchCollisions(settings.collBounds, (A : Sequence, B : Sequence) => {
             futures += future { generateLocalAlignment(A,B,settings)}
         })
 
@@ -385,7 +421,7 @@ object Project4 {
     def genBlockSTAlign(table : KmerTable,settings : AlignSettings,
                      filter : Boolean) : Seq[Alignment] = {
         var aligns = mutable.Queue[Alignment]()
-        table.dispatchCollisionBlocks(settings.minCollisions, 
+        table.dispatchCollisionBlocks(settings.collBounds, 
                                 (max : Int, A : Sequence, S : Seq[Sequence]) => {
             var alg =  generateLocalAlignmentSet(max,A,S,settings)
             for (a <- alg) {
@@ -402,7 +438,7 @@ object Project4 {
                      filter : Boolean) : Seq[Alignment] = {
         var futures = mutable.Queue[Future[Seq[Alignment]]]()
         var aligns = mutable.Queue[Alignment]()
-        table.dispatchCollisionBlocks(settings.minCollisions,
+        table.dispatchCollisionBlocks(settings.collBounds,
                                 (max : Int, A : Sequence, S : Seq[Sequence]) => {
             futures += future {generateLocalAlignmentSet(max,A,S,settings)}
         })

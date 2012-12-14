@@ -9,7 +9,7 @@ class ObjectStore {
 }
 
 class AlignSettings( subf : (Char,Char) => Int , gO : Int, gE : Int, mO : Int,
-                       mId : Float, mIg : Int, mC : Int) {
+                       mId : Float, mIg : Int, mC : Int, xC : Int) {
     val costFunc : (Char,Char) => Int = subf
     val gapOpen : Int = gO
     val gapExtend : Int = gE
@@ -17,6 +17,8 @@ class AlignSettings( subf : (Char,Char) => Int , gO : Int, gE : Int, mO : Int,
     val minIdentity : Float = mId
     val maxIgnore : Float = mIg
     val minCollisions : Int = mC
+    val maxCollisions : Int = xC
+    val collBounds = (mC,xC)
 }
 
 class Sequence( iD : Int, sEQ : String) {
@@ -44,6 +46,7 @@ class Alignment( sA : Sequence, sB : Sequence, oA : String , oB : String,
     val correct = cor
     val error = err
     val errRatio = (correct.toFloat) / (correct.toFloat + error.toFloat)
+    private var overlap : Overlap = null
 
     def valid(settings : AlignSettings) : Boolean = {
         return (errRatio > settings.minIdentity) &&
@@ -53,7 +56,10 @@ class Alignment( sA : Sequence, sB : Sequence, oA : String , oB : String,
     }
 
     def getOverlap() : Overlap = {
-        return new Overlap(this)
+        if (overlap == null) {
+            overlap = new Overlap(this)
+        }
+        return overlap
     }
 }
     

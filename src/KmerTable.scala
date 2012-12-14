@@ -79,25 +79,25 @@ class KmerTable {
         return hist
     }
 
-    def dispatchCollisions( minCollision : Int , act : (Sequence,Sequence) => _) {
+    def dispatchCollisions( collBounds : (Int,Int) , act : (Sequence,Sequence) => _) {
         calculatePairAlignments()
         for ((i,s) <- AlignData) {
             for ((j,count) <- s) {
-                if (count > minCollision) {
+                if ((count >= collBounds._1) && (count >= collBounds._2)) {
                     act(SequenceData.apply(i),SequenceData.apply(j))
                 }
             }
         }
     }
 
-    def dispatchCollisionBlocks( minCollision : Int , act : 
+    def dispatchCollisionBlocks( collBounds : (Int,Int) , act : 
                                 (Int,Sequence,Seq[Sequence]) => _) {
         calculatePairAlignments()
         for ((i,s) <- AlignData) {
             var set = mutable.Queue[Sequence]()
             var max = 0
             for ((j,count) <- s) {                
-                if (count > minCollision) {
+                if ((count >= collBounds._1) && (count >= collBounds._2)) {
                     val t = SequenceData.apply(j)
                     set += t
                     max = math.max(max,t.seq.length)
