@@ -37,10 +37,12 @@ object Project4 {
     var blockAlign = true
     
     def main(args: Array[String]) {
+
+        //Thread.sleep(10000)
         var alignSettings = readArgs(args)
 
         action match {
-            case "calc-overlaps" =>
+          /* case "calc-overlaps" =>
                 var table = generateKmerTable(input)
                 println(calcOverlaps(genAlignment(table,alignSettings,true),alignSettings))
                 System.exit(0) 
@@ -65,7 +67,7 @@ object Project4 {
                 System.exit(0) 
             case "test-fasta-read" => 
                 testFastaRead(input)
-                System.exit(0)
+                System.exit(0) */
         }
     }
 
@@ -190,7 +192,7 @@ object Project4 {
  
     }
 
-    def printHelp() {
+    /*def printHelp() {
         println(" Rohit Ramesh :         Cmsc 423 \n" +
                 " Project 4 : Sequence Overlapper \n" +
                 "                                 \n" +
@@ -465,7 +467,7 @@ object Project4 {
             }                
         }
         return out
-    }
+    } */
 
     
 }

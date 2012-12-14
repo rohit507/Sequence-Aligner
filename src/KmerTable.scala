@@ -11,31 +11,26 @@ import scala.math
 class KmerTable {
 
     var KmerData = new mutable.HashMap[String,mutable.HashSet[Int]]()
-    var AlignData = new mutable.HashMap[Int,mutable.HashMap[Int,Int]]()
+    var PairCountData = new mutable.HashMap[(Int,Int),Int]]()
     var SequenceData = new mutable.HashMap[Int,Sequence]()
 
-    def addPairAlignment( idA : Int , idB : Int ) {
+    def addPairCount( idA : Int , idB : Int ) {
         val n = math.min(idA,idB)
         val m = math.max(idA,idB)
         if(n != m) {
-            if (! AlignData.contains(n)) {
-                AlignData += ((n, new mutable.HashMap[Int,Int]()))
+            if (! PairCountData.contains((n,m))) {
+                PairCountData += (((n,m), 0))
             }
-
-            if (! AlignData.apply(n).contains(m)) {
-                AlignData.apply(n).put(m,0)
-            }
-
-            AlignData.apply(n).put(m,AlignData.apply(n).apply(m) + 1)
+            PairCountData.put((n,m),PairCountData.apply((n,m)) + 1)
         }
     }
 
-    def calculatePairAlignments() {
+    def calculatePairCounts() {
         for((_,s) <- KmerData) {
             val ar = s.toArray
             for( i <- 1 until ar.length) {
                 for( j <- (i + 1) until ar.length ) {
-                    addPairAlignment(ar(i),ar(j))
+                    addPairCount(ar(i),ar(j))
                 }
             }
         }
@@ -80,8 +75,8 @@ class KmerTable {
     }
 
     def dispatchCollisions( collBounds : (Int,Int) , act : (Sequence,Sequence) => _) {
-        calculatePairAlignments()
-        for ((i,s) <- AlignData) {
+        calculatePairCounts()
+        for ((i,s) <- PairCountData) {
             for ((j,count) <- s) {
                 if ((count >= collBounds._1) && (count >= collBounds._2)) {
                     act(SequenceData.apply(i),SequenceData.apply(j))
@@ -92,8 +87,8 @@ class KmerTable {
 
     def dispatchCollisionBlocks( collBounds : (Int,Int) , act : 
                                 (Int,Sequence,Seq[Sequence]) => _) {
-        calculatePairAlignments()
-        for ((i,s) <- AlignData) {
+        calculatePairCounts()
+        for ((i,s) <- PairCountData) {
             var set = mutable.Queue[Sequence]()
             var max = 0
             for ((j,count) <- s) {                

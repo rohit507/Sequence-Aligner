@@ -33,7 +33,7 @@ Sources = FileList["#{SF}/*.scala"].gsub("#{SF}/","")
 Classes = Sources.ext(".class")
 
 SCOpts = "-deprecation -unchecked -optimize"  # Scala Compiler Options
-JavaOpts = ""                   # Java Runtime Options
+JavaOpts = "-Xmx2G"                   # Java Runtime Options
 
 ENV['JAVA_OPTS'] = JavaOpts
 

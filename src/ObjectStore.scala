@@ -21,6 +21,12 @@ class AlignSettings( subf : (Char,Char) => Int , gO : Int, gE : Int, mO : Int,
     val collBounds = (mC,xC)
 }
 
+class Kmer(iD : Int, kM : String, loC : Float) {
+    val id = iD
+    val km = kM
+    val loc = loC
+}
+
 class Sequence( iD : Int, sEQ : String) {
     val id = iD
     val seq = sEQ
