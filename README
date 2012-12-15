@@ -1,8 +1,8 @@
 
-Project 4 :  Hash Overlap and Genome Assembly
+ Project 4 :  Hash Overlap and Genome Assembly
 ==================================================
 
-By Rohit Ramesh
+ By Rohit Ramesh
 ----------------------------
 
     This project takes a series of disperate sequences and turns them into
@@ -10,7 +10,7 @@ a single valid genome. To do this we create hash overlap routine that
 fits into the AMOS pipeline, and tells the tigger and consensus programs
 where to look to find a set of reads that follow one another sequentially.
 
-Structure
+ Structure
 ----------------------------
 
     So, this overlapper is a classic hash-overlap implementation, built 
@@ -40,7 +40,7 @@ from a few parts :
     That's the higher order structure, underneath that there's a little 
 pipeline of data transformations that takes place within the hash overlapper
 itself. Now, thanks to configuration options, and scala's easy multithreading
-there's a few layers at each level, but overall the whole things happens as
+there's a few layers at each level, but overall the whole thing happens as
 follows : 
 
     +------------------+
@@ -76,11 +76,84 @@ multithreading allows for speed, and the modular design of the scaffold that hol
 the aligner up lets us have many output modes and options for quick testing and
 optimization.  
 
-Tools
+ Kmer Management
+----------------------------
+
+    Because we limit ourself to kmers of <= 16 bases we can use hashes which are
+essentially the kmers themselves. The specific hashiing algorithm used amounts
+to turning each base into two bits of an integer. 'A' becomes '00' , 'C' becomes
+'01' and so on, because of this we can use the various speed benefits that come
+from having primitive datatypes as the point of comparison. 
+
+    Once we extract and hash kmers, we need to compare them with kmers from other
+sequences to find sequences with probable overlaps. The comparison we use exploits
+various known properties in order to reduce the number of alignments we eventually
+do with only a tiny cost in terms of memory. 
+
+    The Kmer comparison specifically has a set of nice tools which allow us to 
+take into account the position of a kmer in the input dna sequence as we match 
+sequences with high kmer counts together. Specifically each sequence is divided
+into 3 sections, the leading edge, middle and trailing edge, and each kmer is 
+marked with where on the sequence it appeared.
+
+                     |- Leading Edge -|               |- Trailing Edge -|
+    Sequence : Start |--------------------------------------------------| End
+                                  |-------- Middle --------|
+
+    Kmer matches between two sequences are only considered if one match is in 
+an edge section, and the other in the middle section. This limits the number 
+of alignments we do without removing most alignments that are actually useful 
+to us, namely those between two sequences with enough overlap that we can be
+sure they're matches, but not so much overlap that they might as well be the
+same sequence and are thereby proved useless to us. Aditionally we can make
+sure each pair is noted in the same order, with the probable first sequence 
+before the probable second sequence.  
+
+ Alignment
+----------------------------
+
+    The alignment algorithm we use is largely the same as the one we implemented
+in project 3, with some minor changes to improve efficieny in the new language. 
+
+    There is a specific optimization which does a lot to improve performance though.
+As the kmer table sorts through all the data it has collected, it sets aside some
+lead sequences and sets of trailing sequences. A lead sequence is a single sequence
+which (through kmer hashing) is likely to come immidiately before each sequence in
+its set of trailing sequences. 
+
+    When we have these sets of trailing sequences we can use one thread/worker and
+have it reuse all the memory/objects it created for all the trailing sequence 
+alignments. Given that one of java's main hurdles is the inefficient memory usage
+and the occasional bogging down of the garbage collector, this saves significant 
+on longer sequences. (On short ones, the large numbers of trailing sequences and
+the fact that they aren't split up into multiple sets, means that worker threads 
+can't chare the load as effectively as they might. This averages away on long 
+sequences.)
+
+    Because we know the direction of possible overlaps thanks to our kmer management
+and the fact that we are mainly looking for dovetail alignments, I suspect we could
+use an alternate alignment algorithm to gain a significant speed boost. I don't have
+the time to implement this, but a combination HMM / Local Aligner could possibly let
+us take the O(NM) alignment and make it an O(N + M) one. The idea is similar to the 
+ideas behind making the alignment process linear if we limit the number of total gaps
+(the whole thing with only aligning along a diagonal), and the way we use 3 seperate
+matrices for local alignment with affine gaps. We'd have 3 matrices, each representing
+a state of our HMM, ahang, overlap, and bhang, and each matrix would be the same linear
+'limited distance from perfectly aligned', DP model we discussed in class. This would 
+probably result in significant speedup, if we were aligning lots of 100 base sequences
+it much cut the alignment time by 80% or so, more if the sequences are longer.
+
+(Though it would probably be O((N+M)^K) where k is a constant such that 1 < k < 2 and  
+which would be determined by the maximum error rate. I'm to tired to do the math now
+but you get the idea) 
+
+ Tools
 ----------------------------
 
     The app comes with a large set of test modes and other useful output formats
-in addition to the main .ovl output, I'll detail them in turn below.
+in addition to the main .ovl output, these help with testing, benchmarking and 
+general development. They can all be accessed with command line flags, and are
+detailed below. 
 
     ### Overlap Calculator ###
 
@@ -144,7 +217,42 @@ human readable format for quick verfication and testing.
 
     Prints out a visualization of overlaps between sequences and various 
 information in a human readable format for verfication and testing. 
- 
+
+    ### Fasta Read Benchmark ###
+
+    Command Line Flag : "--bench-fasta-read"
+
+    A quick test to see how fast the fasta reader is
+
+    ### Kmer Generator Benchmark ###
+
+    Command Line Flag : "--bench-kmer-gen"
+
+    A quick test to see how fast our systems can generate kmers and their
+hashes. (technically the hash is an int where every pair of bits represents 
+a base, but it works exactly the same, and lets us use 32 bit integers and
+their speed properties)
+
+    ### Kmer Analysis Benchmark ###
+
+    Command Line Flag : "--bench-kmer-analysis"
+
+    A speed test for the various tools which compare/sort kmers so we know 
+which sequences are similar. 
+
+    ### Alignment Benchmark ###
+
+    Command Line Flag : "--bench-align"
+
+    Tests the various multithreaded, single threaded, blocked and sequential
+alignment modes. 
+
+    ### Quick Alignment Benchmark ###
+
+    Command Line Flag : "--bench-align-quick"
+
+    Same as above, but without aligning every sequence, just a small sample.
+
 
 Change of Language
 ----------------------------
@@ -161,7 +269,8 @@ elism that comes along with the switch, it's a net speed gain.
 
     As for code reuse, Scala is similar enough to java that I could move over
 my local alignment, fasta reader, and HOXD reader functions from project 3
-mostly intact. They just lose all those ugly semicolons. 
+mostly intact. They just lose all those ugly semicolons. (Sadly optimizations
+have changed the code enough that it's not obviously the same anymore) 
 
 Usage
 ----------------------------
@@ -174,23 +283,24 @@ as this readme file.
     $ rake clean
     $ rake build
 
-    ### Running The Aligner ###
-
     This will create the default scala compatible jar file you can run 
 directly with the following command:
 
     $ bin/scala Proj4Scala.jar -i <input-file>
 
-    While there are command line options for everything, i'm too tired to
-document them right now. Look in src/Project4.scala under the function
-readArgs to see them all. In the meantime the above runs with the defaults
-mentioned on piazza, with the HOXD matrix from project 3 hardcoded in. 
+    Though running through rake is reccomended because of a number of command
+line options and java environment things that keep the overlapper from crashing.
+    
 
     ### Quick Run ###
     
     Will quickly run the aligner with the small sequence.
 
     $ rake run
+    $ rake run args="<command line args>"
+
+    You can leave the args portion alone and it will run with the default arguments
+on the small sequence, printing output to STDOUT.  
 
     ### Pipeline Automation ###
 
@@ -199,20 +309,207 @@ following commands for the crp177 input, you'll find the output in /tmp.
 please be careful since running these commands will delete that folder and 
 make you lose the input there. They also track timing information.
 
-    $ rake pipeline:amos
-    $ rake pipeline:project
+    $ rake pipeline:amos 
+    $ rake pipeline:project args="<command line args>"
 
     The same process with the large sequences can be run with the following.
 
     $ rake pipeline:amos:large
-    $ rake pipeline:project:large
+    $ rake pipeline:project:large args="<command line args>"
 
-    At the moment this is a slow, but fully working solution, I plan to update
-and improve it, but I'd liek to have *something* subbmitted at least for the 
-moment. (Seriously, finals are an order of magnitude more stressful than I 
-predicted, you'd think I'd have learned by now.) 
+    Which will automate all the pipeline stuff for you. As before you can use
+the custom arguments or not. If not, it'll run with the default settings I've
+chosen. 
 
-Optimal Settings
+ Command Line Arguments     
 ----------------------------
 
-< To be taken care of later > 
+    These all replace the <something> in args="<something>". Otherwise they're 
+normal command line parameters, use spaces between them. Parameters with spaces
+are not going to work, even if you use quotations if you run through ruby. If 
+you really need to you can edit line 40 of Rakefile.rb to include them (making
+sure to escape the quotation marks).
+
+    Aditionally only the very last of a set of incompatible arguments will be
+taken, and the arguments supplied on the command line override the ones in the 
+Rakefile. 
+
+    ### Key ##
+
+    Arguments are in the following form:
+
+    "possible flag" | "other posible flag" [arguments]
+
+        Description of flag.
+
+    ### Argument List ###
+
+    "-h" | "--help" 
+
+         Print the help message (it just tells you to read this)
+    
+    "-m" | "--matrix" | "-H" | "--HOXD-matrix" [Filename]
+
+        Set the location of the HOXD matrix
+    
+    "-k" | "--kmer-size" [Integer]
+
+        Set the desired kmer size.
+    
+    "-i" | "--input" [Filename]
+
+        Location of the input file
+    
+    "-o" | "--output" [Filename]
+    
+        Location of the output file. (STDOUT if not given, or the
+    mode is anything other than overlap calculator)
+
+    "--match" [Integer]
+
+        Match reward
+
+    "--mismatch" [Integer]
+
+        Mismatch Penalty
+                    
+    "--min-overlap" [Integer]
+
+        Minimum Sequence overlap
+
+    "--min-identity" [Float]
+
+        Error ratio neccesary for a match. 1.0 means all matches have
+    to be perfect, 0.5 means there can be up to a 50% error in a valid
+    overlap.
+
+    "--min-collisions" [Integer]
+
+        The minimum numer of kmer collisions between 2 sequences for them
+    to be considered for alignment.
+
+    "--max-collisions" [Integer]
+
+        The maximum number of kmer collisions for them to be considered for
+    alignment. 
+                    
+    "--kmer-center" [Float]
+
+        The portion (out of 1) of a sequence which should be considered the 
+    center. 0.6 means the 30% to either side of the middle, 0.4 the 20% either
+    side of the middle. 
+
+    "--kmer-edge" [Float]
+
+        The portion of a sequence (out of 1) which should be considered and
+    edge area. 0.5 means that the first half and last half will each be consi-
+    dered their respective edge area, 0.4 means that there's 20% in the center
+    that's not aprt of an edge.
+                   
+    "-gO" | "--gap-open" [Int]
+
+        Gap open penalty.
+                   
+    "-gE" | "--gap-extend" [Int] 
+
+        gap extention penalty. 
+                   
+    "--max-ignore" [Int]
+
+        maximum size for aHang and bHang. 
+
+    "--st-hash"
+
+        Use single threaded hashing to compare kmers. 
+
+    "--mt-hash"
+
+        Use multi threaded hashing to compare kmers. 
+                 
+    "--st-align"
+
+        Use a single threaded alignment routine.
+                 
+    "--mt-align"
+
+        use a multi threaded alignment routine.  
+               
+    "--block-align"
+
+        Use a block based (leading seq, trailing set) based
+    alignment scheme. 
+                 
+    "--single-align" 
+
+        Use a one at a time alignment scheme.
+                  
+    "--calc-overlaps"
+
+        Mode: Calculate Overlaps
+                
+    "--test-overlaps"
+    
+        Mode: Test Overlaps
+                  
+    "--test-alignment"
+
+        Mode: Test Alignment
+
+    "--test-dispatch-collisions"
+
+        Mode: Test Collision Dispatch
+                  
+    --test-block-dispatch"
+
+        Mode: Test Block Dispatch
+                   
+    --test-kmer-cover"
+
+        Mode: Test Kmer Coverage 
+                
+    --test-fasta-read"
+
+        Mode: Test Fasta Read
+               
+    "--bench-fasta-read"
+
+        Mode: Benchmark Fasta Read
+
+    "--bench-kmer-gen"
+    
+        Mode: Benchmar Kmer Generation
+                  
+    "--bench-kmer-analysis" 
+
+        Mode: Benchmark Kmer Analysis
+               
+    "--bench-align-quick"
+        
+        Mode: Quick ALignment Benchmark
+                 
+    "--bench-align" 
+    
+        Mode: ALignment Benchmark
+            
+    "--debug"
+
+        Enable debug output
+            
+    "--sleep-for-debug"
+
+        Sleep for 30 secs on start to allow debugger to attach. 
+                        
+ Optimal Settings
+----------------------------
+
+    Small Sequence : 
+
+    $ rake pipeline:project
+
+    Large Sequence :
+
+    $ rake pipeline:project:large 
+
+    Optima are already built in, but the large aligner doesn't work perfectly.
+It needs settings tweaking, and that's *really hard* when each run takes 20 
+minutes. 

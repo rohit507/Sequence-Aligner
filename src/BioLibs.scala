@@ -15,6 +15,9 @@ import scala.collection.immutable.StringOps
 
 object BioLibs {
 
+    var debug = false
+    private def printdb(s : String) { if(debug){ println(s)}}
+
     /* */ // Read in a fasta file dispatching each sequence as it's
           // read through the input function. 
     def readSeq( file : String, act : (Sequence) => _) : Int = {

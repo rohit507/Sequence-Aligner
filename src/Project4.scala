@@ -7,12 +7,14 @@
 import BioLibs._
 
 import java.util.Random
+import java.io._
 
 import scala.collection._
 import scala.collection.immutable.StringOps
 import scala.collection.mutable.OpenHashMap
 import scala.collection.mutable.Queue
 import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.UnrolledBuffer
 import scala.actors._
 import scala.actors.Futures._
 import scala.math._
@@ -21,8 +23,8 @@ import gnu.trove.map.hash.TIntObjectHashMap
 
 object Project4 {
 
+    val rt = Runtime.getRuntime()
     var rand = new Random(System.currentTimeMillis())
-    var bounds = (2,20)
 
 /*  ======== Defaults =========
     min overlap length = 40 
@@ -38,6 +40,7 @@ object Project4 {
     var kSize = 12
     var action = "calc-overlaps"
     var input = ""
+    var output = ""
     var stHash = true
     var stAlign = false
     var blockAlign = true
@@ -45,11 +48,13 @@ object Project4 {
     def main(args: Array[String]) {
 
         var alignSettings = readArgs(args)
+        BioLibs.debug = debug
 
         action match {
             case "calc-overlaps" =>
                 var table = generateKmerTable(input)
-                println(calcOverlaps(genAlignment(table,alignSettings,true),alignSettings))
+                table.debug = debug
+                calcOverlaps(genAlignment(table,alignSettings,true),alignSettings)
                 System.exit(0) 
             case "test-kmer-cover" => 
                 testKmerCover(input)
@@ -119,6 +124,9 @@ object Project4 {
                     i += 2
                 case "-i" | "--input" => 
                     input = args(i + 1) 
+                    i += 2
+                case "-o" | "--output" => 
+                    output = args(i + 1) 
                     i += 2
                 case "--match" =>
                     mat = math.abs(args(i + 1).toInt)
@@ -210,7 +218,7 @@ object Project4 {
                 case "--bench-align" =>
                     action = "bench-align"
                     i += 1
-                case "--debug-all" =>
+                case "--debug" =>
                     debug = true
                     i += 1
                 case "--sleep-for-debug" =>
@@ -241,6 +249,8 @@ object Project4 {
                                  (kmerEdge,kmerCenter))
  
     }
+
+    def printdb(s : String) { if(debug){ println(s)}}
 
     def printHelp() {
         println(" Rohit Ramesh :         Cmsc 423 \n" +
@@ -491,12 +501,12 @@ object Project4 {
     /* */ // Generate a kmer table using a single thread
     def genSTKmerTable(file : String) : KmerTable = {
         var kmerTable = new KmerTable()
-
+        var c = 0
         readSeq(file,(seq : Sequence) => {
+           c += 1
            var hSet = generateKmerSet(kSize,seq)
-           if (debug) { println("Generated Kmers for Seq : " + seq.id )}
+           if((seq.id % 1000) == 0) {printdb("Generated Kmers for Seq : " + seq.id )}
            kmerTable.addKmerSet(seq,hSet)
-           if (debug) { println("Added Kmer Set : " + seq.id) }
         })
 
         return kmerTable
@@ -506,14 +516,17 @@ object Project4 {
     def genMTKmerTable(file : String) : KmerTable = {
         var kmerSets = Queue[Future[(Sequence,ArrayBuffer[Kmer])]]()
         var kmerTable = new KmerTable()
-
         readSeq(file,(seq : Sequence) => {
-           if (debug) { println("Read Seq : " + seq.id) }
+           printdb("Read Seq : " + seq.id)
            val f = future {
-                if (debug) { println("Start Processing Seq : " + seq.id)}
+                if((seq.id % 1000) == 0) {
+                    printdb("Start Processing Seq : " + seq.id)
+                }
                 var hSet = generateKmerSet(kSize,seq)
-                if (debug) { println("Generated Kmers for Seq : " + seq.id +
-                                " on thread " + Thread.currentThread.getName ) }
+                if((seq.id % 1000) == 0) {
+                    printdb("Generated Kmers for Seq : " + seq.id +
+                        " on thread " + Thread.currentThread.getName ) 
+                }
                 (seq,hSet)
            }
            kmerSets += f
@@ -523,9 +536,11 @@ object Project4 {
             f.apply() match {
                 case (seq,set) => 
                     kmerTable.addKmerSet(seq,set)
-                    if (debug) { println("Added Kmer Set : " + seq.id)}
+                    if((seq.id % 1000) == 0) {
+                        printdb("Added Kmer Set : " + seq.id)
+                    }
                 case _ => 
-                    if (debug) { println("Error in Future Return")}
+                    printdb("Error in Future Return")
             }
         }
         
@@ -557,10 +572,24 @@ object Project4 {
         var aligns = mutable.Queue[Alignment]()
         table.dispatchCollisions(settings, (A : Sequence, B : Sequence) => {
             if((debugStop < 0) || (aligns.size > debugStop)) {
+                if((aligns.size % 1000) == 0) {
+                    printdb("Aligning pair : " + aligns.size)
+                }
+                if( (aligns.size % 5000) == 0) {
+                    printdb("There is " + rt.freeMemory() +
+                        " free memory, out of " + rt.totalMemory() +
+                        " total memory." )
+                    printdb("Garbage Collecting. ")
+                    System.gc()
+                    printdb("Finished Garbage Collecting.")
+                    printdb("There is now " + rt.freeMemory() +
+                        " free memory, out of " + rt.totalMemory() +
+                        " total memory." )
+                }
                 var alg =  generateLocalAlignment(A,B,settings)    
                 if ((! filter) || (alg.valid(settings))) {
                     aligns += alg
-                }               
+                }
             }
         })
         return aligns
@@ -575,13 +604,42 @@ object Project4 {
         table.dispatchCollisions(settings, (A : Sequence, B : Sequence) => {
             if((debugStop < 0) || (i > debugStop)) {
                 i += 1
-                futures += future { generateLocalAlignment(A,B,settings)}
+                if((i % 1000) == 0) {
+                    printdb("Dispatching Align : " + i)
+                }
+                futures += future { 
+                    val c = i
+                    if((c % 80) == 0) {
+                        printdb("Starting Align " + c + 
+                            " on thread " + Thread.currentThread.getName)
+                    }
+                    val a = generateLocalAlignment(A,B,settings)
+                    if( (i % 8000) == 0) {
+                        printdb("There is " + rt.freeMemory() +
+                            " free memory, out of " + rt.totalMemory() +
+                            " total memory." )
+                        printdb("Garbage Collecting. ")
+                        System.gc()
+                        printdb("Finished Garbage Collecting.")
+                        printdb("There is now " + rt.freeMemory() +
+                            " free memory, out of " + rt.totalMemory() +
+                           " total memory." )
+                    }
+                    if((c % 80) == 0) {
+                        printdb("Completed Align : " + c)
+                    }
+                    a
+                }
             }
         })
-
+        i = 0
         for (f <- futures) {
             var al = f.apply()
             if ((! filter) || (al.valid(settings))) {
+                i += 1
+                if((i % 1000) == 0) {
+                    printdb("Integrating Align : " + i)
+                }
                 aligns += al
             }
         }
@@ -592,10 +650,27 @@ object Project4 {
     /* */ // Aligns Blocks of sequences in a single thread.
     def genBlockSTAlign(table : KmerTable,settings : AlignSettings,
                      filter : Boolean) : Seq[Alignment] = {
-        var aligns = mutable.Queue[Alignment]()
+        var aligns = mutable.UnrolledBuffer[Alignment]()
+        var c = 0
         table.dispatchCollisionBlocks(settings, 
                                 (max : Int, A : Sequence, S : Seq[Sequence]) => {
             if((debugStop < 0) || (aligns.size > debugStop)) {
+                c += 1
+                if((c % 100) == 0) {
+                    printdb("Aligning Block " + c + 
+                        " at sequence " + aligns.size)
+                }   
+                if( (c % 1000) == 0) {
+                    printdb("There is " + rt.freeMemory() +
+                        " free memory, out of " + rt.totalMemory() +
+                        " total memory." )
+                    printdb("Garbage Collecting. ")
+                    System.gc()
+                    printdb("Finished Garbage Collecting.")
+                    printdb("There is now " + rt.freeMemory() +
+                        " free memory, out of " + rt.totalMemory() +
+                        " total memory." )
+                }
                 var alg =  generateLocalAlignmentSet(max,A,S,settings)
                 for (a <- alg) {
                     if ((! filter) || (a.valid(settings))) {
@@ -604,6 +679,7 @@ object Project4 {
                 }
             }
         })
+        printdb("There are " + aligns.size + " probable valid alignments.") 
         return aligns
 
     } /* */
@@ -618,14 +694,56 @@ object Project4 {
                                 (max : Int, A : Sequence, S : Seq[Sequence]) => {
             if((debugStop < 0) || (i > debugStop)) {
                 i += 1
-                futures += future {generateLocalAlignmentSet(max,A,S,settings)}
+                if((i % 1000) == 0) {
+                    printdb("Dispatching Align block : " + i)
+                }
+                if( (i % 5000) == 0) {
+                    printdb("There is " + rt.freeMemory() +
+                        " free memory, out of " + rt.totalMemory() +
+                        " total memory." )
+                    printdb("Garbage Collecting. ")
+                    System.gc()
+                    printdb("Finished Garbage Collecting.")
+                    printdb("There is now " + rt.freeMemory() +
+                        " free memory, out of " + rt.totalMemory() +
+                        " total memory." )
+                }
+                futures += future {
+                    val c = i 
+                    if((c % 100) == 0) {
+                        printdb("Starting Align Block " + i + 
+                            " on thread " + Thread.currentThread.getName)
+                    }
+                    val a = generateLocalAlignmentSet(max,A,S,settings)
+                    if((c % 100) == 0) {
+                        printdb("Completed Align Block " + i + 
+                            " on thread " + Thread.currentThread.getName)
+                    }
+                    a
+                }
             }
         })
 
+        i = 0
         for (f <- futures) {
             var alg = f.apply()  
             for (a <- alg) {
                 if ((! filter) || (a.valid(settings))) {
+                    i += 1
+                    if((i % 1000) == 0) {
+                        printdb("Integrating Alignment : " + i)
+                    }
+                    if( (i % 2000) == 0) {
+                        printdb("There is " + rt.freeMemory() +
+                            " free memory, out of " + rt.totalMemory() +
+                            " total memory." )
+                        printdb("Garbage Collecting. ")
+                        System.gc()
+                        printdb("Finished Garbage Collecting.")
+                        printdb("There is now " + rt.freeMemory() +
+                            " free memory, out of " + rt.totalMemory() +
+                            " total memory." )
+                    }
                     aligns += a
                 }
             }
@@ -635,17 +753,37 @@ object Project4 {
     } /* */
 
 
-    /* */ // calculates overlaps in the standar fashing and returns 
-          //  a string
-    def calcOverlaps(alignments : Seq[Alignment],settings : AlignSettings) : String = {
+    /* */ // calculates overlaps in the standar fashing and prints 
+          //  to where it should
+    def calcOverlaps(alignments : Seq[Alignment],settings : AlignSettings) {
+        var i = 0
+        val file = new File(output)
+        if (output != "") {
+            if(file.exists()){
+                file.delete()
+            }
+            file.createNewFile()
+        }
+        val oStream = new FileWriter(file)
         var out = ""
         for (a <- alignments) {
             var o = a.getOverlap()
             if( o.valid(settings)) {
-                out += o.print() + "\n"
+                i += 1
+                if((i % 1000) == 0) {
+                    printdb("Saving Overlap : " + i)
+                }
+                out = o.print() 
+                if (output == ""){
+                    println(out)
+                }else {
+                    oStream.write(out + "\n",0,out.length + 1)
+                }
             }                
         }
-        return out
+        if (output != "") {
+            oStream.flush()
+        }
     } /* */
 
     

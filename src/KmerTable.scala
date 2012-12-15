@@ -17,6 +17,8 @@ import java.lang.Runtime
 class KmerTable {
 
     var debug = false
+    private def printdb(s : String) { if(debug){ println(s)}}
+
     val rt = Runtime.getRuntime()
 
     // Hash of kmer strings to the various pieces of kmer data taken
@@ -126,27 +128,22 @@ class KmerTable {
             }
 
             i += 1
-            if(debug){
-                if( (i % 1000) == 0) {
-                    println("Analysed kmer pair " + i + " of " 
-                        + KmerData.size + ".")
-                }
+            if( (i % 1000) == 0) {
+                printdb("Analysed kmer pair " + i + " of " 
+                    + KmerData.size + ".")
             }
+         
 
             if( (i % 15000) == 0) {
-                if(debug){
-                    println("There is " + rt.freeMemory() +
-                        " free memory, out of " + rt.totalMemory() +
-                        " total memory." )
-                    println("Garbage Collecting. ")
-                }
+                printdb("There is " + rt.freeMemory() +
+                    " free memory, out of " + rt.totalMemory() +
+                    " total memory." )
+                printdb("Garbage Collecting. ")
                 System.gc()
-                if(debug){
-                    println("Finished Garbage Collecting.")
-                        println("There is now " + rt.freeMemory() +
-                        " free memory, out of " + rt.totalMemory() +
-                        " total memory." )
-                }
+                printdb("Finished Garbage Collecting.")
+                printdb("There is now " + rt.freeMemory() +
+                    " free memory, out of " + rt.totalMemory() +
+                    " total memory." )
             }
         }
     }
@@ -180,13 +177,13 @@ class KmerTable {
             }
 
             i += 1
-            if(debug){
-                if( (i % 1000) == 0) {
-                    println("Analysed kmer pair " + i + " of " +
-                        PairData.size + ".")
-                }
+            if( (i % 254437) == 0) {
+                printdb("Analysed dispatch set " + i + " of " +
+                    PairData.size + ".")
             }
         }
+
+        printdb("Created " + DispatchData.size() + " dispatch blocks.")
     }
 
     def uniqueKmers() : Int = {
