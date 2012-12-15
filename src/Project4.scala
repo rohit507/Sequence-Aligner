@@ -10,9 +10,14 @@ import java.util.Random
 
 import scala.collection._
 import scala.collection.immutable.StringOps
+import scala.collection.mutable.OpenHashMap
+import scala.collection.mutable.Queue
+import scala.collection.mutable.ArrayBuffer
 import scala.actors._
 import scala.actors.Futures._
 import scala.math._
+
+import gnu.trove.map.hash.TIntObjectHashMap
 
 object Project4 {
 
@@ -29,6 +34,7 @@ object Project4 {
     (or BLOSUM) for match/mismatch. */
 
     var debug = false
+    var debugStop = -1
     var kSize = 12
     var action = "calc-overlaps"
     var input = ""
@@ -38,11 +44,10 @@ object Project4 {
     
     def main(args: Array[String]) {
 
-        //Thread.sleep(10000)
         var alignSettings = readArgs(args)
 
         action match {
-          /* case "calc-overlaps" =>
+            case "calc-overlaps" =>
                 var table = generateKmerTable(input)
                 println(calcOverlaps(genAlignment(table,alignSettings,true),alignSettings))
                 System.exit(0) 
@@ -67,8 +72,23 @@ object Project4 {
                 System.exit(0) 
             case "test-fasta-read" => 
                 testFastaRead(input)
-                System.exit(0) */
-        }
+                System.exit(0)
+            case "bench-fasta-read" =>
+                benchFastaRead(input)
+                System.exit(0) 
+            case "bench-kmer-gen" =>
+                benchKmerGen(input)
+                System.exit(0)
+            case "bench-kmer-analysis" =>
+                benchKmerAnalysis(input,alignSettings)
+                System.exit(0)
+            case "bench-align-quick" =>
+                benchAlignQuick(input,alignSettings)
+                System.exit(0) 
+            case "bench-align" =>
+                benchAlign(input,alignSettings)
+                System.exit(0)
+        } 
     }
 
     def readArgs(args: Array[String]) : AlignSettings = {
@@ -81,8 +101,10 @@ object Project4 {
         var maxIgnore = 90
         var gapOpen = -200
         var gapExtend = -20
-        var minCollisions = 2
-        var maxCollisions = 22
+        var minCollisions = 7
+        var maxCollisions = 222
+        var kmerCenter = 0.4f
+        var kmerEdge = 0.4f
 
         while (i < args.length) {
             args(i) match {
@@ -119,7 +141,13 @@ object Project4 {
                 case "--max-collisions" =>
                     maxCollisions = math.abs(args(i + 1).toInt)
                     i += 2
-                case "-gO" | "--gap-open" =>
+               case "--kmer-center" =>
+                    kmerCenter = math.abs(args(i + 1).toFloat)
+                    i += 2
+               case "--kmer-edge" =>
+                    kmerEdge = math.abs(args(i + 1).toFloat)
+                    i += 2
+               case "-gO" | "--gap-open" =>
                     gapOpen = -math.abs(args(i + 1).toInt)
                     i += 2
                 case "-gE" | "--gap-extend" =>
@@ -167,11 +195,31 @@ object Project4 {
                 case "--test-fasta-read" =>
                     action = "test-fasta-read"
                     i += 1
+                case "--bench-fasta-read" =>
+                    action = "bench-fasta-read"
+                    i += 1
+                case "--bench-kmer-gen" =>
+                    action = "bench-kmer-gen"
+                    i += 1
+                case "--bench-kmer-analysis" =>
+                    action = "bench-kmer-analysis"
+                    i += 1
+                case "--bench-align-quick" =>
+                    action = "bench-align-quick"
+                    i += 1
+                case "--bench-align" =>
+                    action = "bench-align"
+                    i += 1
                 case "--debug-all" =>
                     debug = true
-                    i += 1 
-                case _ =>
-                    println("Invalid Argument")
+                    i += 1
+                case "--sleep-for-debug" =>
+                    println("Sleeping so debugger can connect.")
+                    Thread.sleep(30000)
+                    i += 1
+                case s =>
+                    println("Invalid Argument : " + s  )
+                    println("Exiting Program.")
                     System.exit(1)
             }
         }
@@ -188,11 +236,13 @@ object Project4 {
         }
 
         return new AlignSettings(compFunc,gapOpen,gapExtend,minOverlap,
-                                 minIdentity,maxIgnore,minCollisions,maxCollisions)
+                                 minIdentity,maxIgnore,
+                                 (minCollisions,maxCollisions),
+                                 (kmerEdge,kmerCenter))
  
     }
 
-    /*def printHelp() {
+    def printHelp() {
         println(" Rohit Ramesh :         Cmsc 423 \n" +
                 " Project 4 : Sequence Overlapper \n" +
                 "                                 \n" +
@@ -200,20 +250,34 @@ object Project4 {
                 "   See README file for details   \n")
     }
 
-    // just prints the first few bits of data as the fasta file is being read
+    /* */ // just prints the first few bits of data as the fasta file is being read
     def testFastaRead(file : String) {
         var i = 0
+        println("")
         readSeq(file, (s : Sequence) => {
             i += 1
             if (i <= 10) {
                 println("id : " + s.id)
                 println("seq: " + s.seq)
                 println("")
+            } else {
+                System.exit(0)
             }
         })
-    } 
+    } /* */
 
-    // tests a variety of kmer sizes and prints match data
+    /* */ // just reads a fasta file and prints a small amount of logging data. 
+    def benchFastaRead(file : String) {
+        val startTime = System.currentTimeMillis
+        var i = 0
+        readSeq(file, (s : Sequence) => {
+            i += 1
+        })
+        println(" Read " + i + " sequences from " + file + " in " +
+               (System.currentTimeMillis - startTime) + " milliseconds.")
+    } /* */
+
+    /* */ // tests a variety of kmer sizes and prints match data
     def testKmerCover( file : String ) {
         for (i <- 0 to 25) {
             val possible = math.pow(4,i) 
@@ -235,12 +299,66 @@ object Project4 {
                     "seqs with that many collisions ] :\n" + o )
             
         }
-    }
+    } /* */
 
+    /* */ // Benchmarks both the single threaded and multithreaded
+          //  kmer generation stuff. 
+    def benchKmerGen(file : String) {
+       try {
+            var startTime = System.currentTimeMillis
+            var tab = genSTKmerTable(file)
+            println("\nGenerated " + tab.uniqueKmers() + " unique kmers from " +
+                tab.uniqueSeqs() + " sequences from " + file + " sequentially in " +
+               (System.currentTimeMillis - startTime) + " milliseconds.\n")
+        } catch {
+            case e => 
+                println("\nSingle Threaded Kmer Generation Failed :\n\n")
+                println(e.getMessage())
+                e.printStackTrace()
+        }
+        try {
+            var startTime = System.currentTimeMillis
+            var tab = genMTKmerTable(file)
+            println("Generated " + tab.uniqueKmers() + " unique kmers from " +
+                tab.uniqueSeqs() + " sequences from " + file + " in parellel in " +
+               (System.currentTimeMillis - startTime) + " milliseconds.\n")
+        } catch {
+            case e => 
+                println("\nMulti Threaded Kmer Generation Failed :\n\n")
+                println(e.getMessage())
+                e.printStackTrace()
+        }
+    } /* */
+
+    /* */ // Benchmarks both the single threaded and multithreaded
+          //  kmer generation stuff. 
+    def benchKmerAnalysis(file : String,s : AlignSettings) {
+       try {
+            println("Starting kmer gen.")
+            var tab = generateKmerTable(file)
+            tab.debug = debug 
+            println("Finished kmer gen.")
+            var startTime = System.currentTimeMillis
+            tab.calcPairData(s)
+            println("\nCalculated pair data in " + 
+                (System.currentTimeMillis - startTime) + " milliseconds.\n")
+            startTime = System.currentTimeMillis
+            tab.calcDispatchData(s)
+            println("Calculated dispatch data in " +
+                (System.currentTimeMillis - startTime) + " milliseconds.\n")
+        } catch {
+            case e => 
+                println("\nKmer Analysis Failed : \n\n")
+                println(e.getMessage())
+                e.printStackTrace()
+        }
+    } /* */
+
+    /* */ // Tests whether collision dispatch is working correctly. 
     def testDispatchCollisions( table : KmerTable, settings : AlignSettings) {
         var i = 0
         var comp = mutable.HashSet[(Int,Int)]()
-        table.dispatchCollisions(settings.collBounds, (A : Sequence, B : Sequence) => {
+        table.dispatchCollisions(settings, (A : Sequence, B : Sequence) => {
             i += 1
             if(comp.contains((A.id,B.id))) {
                 println( "!!!! Collission " + A.id + "<->" + B.id +
@@ -249,13 +367,14 @@ object Project4 {
             comp += ((A.id,B.id))
             println( " Dispatched Coll : " + i + " - " + A.id + " <-> " + B.id)
         })
-    }
+    } /*  */
 
+    /* */ // Tests whether the dispatching of blocks works properly
     def testBlockDispatch( table : KmerTable , settings : AlignSettings) {
         var i = 0
         var comp = mutable.HashSet[(Int,Int)]()
         var hist = mutable.HashMap[Int,Int]()
-        table.dispatchCollisionBlocks(settings.collBounds,
+        table.dispatchCollisionBlocks(settings,
                      (max : Int, A : Sequence, S : Seq[Sequence]) => {
             for(B <- S) {
                 i += 1
@@ -281,8 +400,10 @@ object Project4 {
                       hist.apply(k) + "]\n"
         }
         println(o)
-    }
+    } /* */
 
+    /* */ // Tests whether alignments are working properly in a nicely visual
+          //  way. 
     def testAlignment(alignments : Seq[Alignment],settings : AlignSettings) {
         var i = 0;
         for (a <- alignments) {
@@ -298,8 +419,43 @@ object Project4 {
             println("   is Valid? : " + a.valid(settings))
             println("")                       
         }
-    }
+    } /* */
 
+    /* */ // Benchmarks an alignment with whatever alignment
+          // fuunction you ask it to
+    def benchAlignHelper( file : String, s : AlignSettings, n : String,
+             aligner : (KmerTable,AlignSettings,Boolean) => Seq[Alignment]) {        
+       try {
+            var tab = generateKmerTable(file)
+            var startTime = System.currentTimeMillis
+            var aligns = aligner(tab,s,false)
+            println("\nCalculated " + aligns.size + " " + n + " alignments in " + 
+                (System.currentTimeMillis - startTime) + " milliseconds.\n")
+        } catch {
+            case e => 
+                println("\n" + n.capitalize + " Alignment Benchmark Failed : \n\n")
+                println(e.getMessage())
+                e.printStackTrace()
+        }
+    } /* */
+
+    /* */ // Benchmarks both the single threaded and multithreaded
+          //  kmer generation stuff, with small numbers of sequences
+    def benchAlignQuick(file : String , s : AlignSettings) {
+       debugStop = 500
+       benchAlign(file,s)
+    } /* */
+
+    /* */ // Benchmarks both the single threaded and multithreaded
+          //  kmer generation stuff. 
+    def benchAlign(file : String , s : AlignSettings) {
+       benchAlignHelper(file,s,"single threaded single",genSingleSTAlign)
+       benchAlignHelper(file,s,"single threaded block",genBlockSTAlign)
+       benchAlignHelper(file,s,"multi threaded single",genSingleMTAlign)
+       benchAlignHelper(file,s,"multi threaded block",genBlockMTAlign)
+    } /* */
+ 
+    /* */ // Tests overlaps in a easy to read visual format
     def testOverlaps(alignments : Seq[Alignment],settings : AlignSettings) {
         var i = 0;
         for (a <- alignments) {
@@ -320,39 +476,42 @@ object Project4 {
             println("   Error   : " + a.errRatio)
             println("   Valid?  : " + o.valid(settings))                       
         }
+    } /* */
 
-    }
-
+    /* */ // Generate a kmer table using whatever style the
+    //        options tell you to
     def generateKmerTable(file : String) : KmerTable = {
         if (stHash) {
             return genSTKmerTable(file)
         } else {
             return genMTKmerTable(file)
         }
-    }
+    } /* */
 
+    /* */ // Generate a kmer table using a single thread
     def genSTKmerTable(file : String) : KmerTable = {
         var kmerTable = new KmerTable()
 
         readSeq(file,(seq : Sequence) => {
-           var hSet = generateKmerSet(kSize,seq.seq)
+           var hSet = generateKmerSet(kSize,seq)
            if (debug) { println("Generated Kmers for Seq : " + seq.id )}
            kmerTable.addKmerSet(seq,hSet)
            if (debug) { println("Added Kmer Set : " + seq.id) }
         })
 
         return kmerTable
-    }
+    } /* */
 
+    /* */ // Generate a kmer table using multiple threads
     def genMTKmerTable(file : String) : KmerTable = {
-        var kmerSets = mutable.Queue[Future[(Sequence,Set[String])]]()
+        var kmerSets = Queue[Future[(Sequence,ArrayBuffer[Kmer])]]()
         var kmerTable = new KmerTable()
 
         readSeq(file,(seq : Sequence) => {
            if (debug) { println("Read Seq : " + seq.id) }
            val f = future {
                 if (debug) { println("Start Processing Seq : " + seq.id)}
-                var hSet = generateKmerSet(kSize,seq.seq)
+                var hSet = generateKmerSet(kSize,seq)
                 if (debug) { println("Generated Kmers for Seq : " + seq.id +
                                 " on thread " + Thread.currentThread.getName ) }
                 (seq,hSet)
@@ -371,8 +530,10 @@ object Project4 {
         }
         
         return kmerTable
-    }
+    } /* */
 
+    /* */ // Aligns all neccesary sequences in a table based on what
+          //  options the user has chosen
     def genAlignment(table : KmerTable,settings : AlignSettings,
                         filter : Boolean) : Seq[Alignment] = {
         if (blockAlign) {
@@ -388,26 +549,34 @@ object Project4 {
                 return genSingleMTAlign(table,settings,filter)
             }
         }
-      }
+      } /* */
 
+    /* */ //Aligns Sequences one at a time in a single thread
     def genSingleSTAlign(table : KmerTable,settings : AlignSettings,
                      filter : Boolean) : Seq[Alignment] = {
         var aligns = mutable.Queue[Alignment]()
-        table.dispatchCollisions(settings.collBounds, (A : Sequence, B : Sequence) => {
-            var alg =  generateLocalAlignment(A,B,settings)    
-            if ((! filter) || (alg.valid(settings))) {
-                aligns += alg
+        table.dispatchCollisions(settings, (A : Sequence, B : Sequence) => {
+            if((debugStop < 0) || (aligns.size > debugStop)) {
+                var alg =  generateLocalAlignment(A,B,settings)    
+                if ((! filter) || (alg.valid(settings))) {
+                    aligns += alg
+                }               
             }
         })
         return aligns
-    }
+    } /* */
 
+    /* */ // Aligns Sequences one at a time, in multiple threads
     def genSingleMTAlign(table : KmerTable,settings : AlignSettings,
                      filter : Boolean) : Seq[Alignment] = {
         var futures = mutable.Queue[Future[Alignment]]()
         var aligns = mutable.Queue[Alignment]()
-        table.dispatchCollisions(settings.collBounds, (A : Sequence, B : Sequence) => {
-            futures += future { generateLocalAlignment(A,B,settings)}
+        var i = 0
+        table.dispatchCollisions(settings, (A : Sequence, B : Sequence) => {
+            if((debugStop < 0) || (i > debugStop)) {
+                i += 1
+                futures += future { generateLocalAlignment(A,B,settings)}
+            }
         })
 
         for (f <- futures) {
@@ -418,31 +587,39 @@ object Project4 {
         }
 
         return aligns
-    }
+    } /* */
 
+    /* */ // Aligns Blocks of sequences in a single thread.
     def genBlockSTAlign(table : KmerTable,settings : AlignSettings,
                      filter : Boolean) : Seq[Alignment] = {
         var aligns = mutable.Queue[Alignment]()
-        table.dispatchCollisionBlocks(settings.collBounds, 
+        table.dispatchCollisionBlocks(settings, 
                                 (max : Int, A : Sequence, S : Seq[Sequence]) => {
-            var alg =  generateLocalAlignmentSet(max,A,S,settings)
-            for (a <- alg) {
-                if ((! filter) || (a.valid(settings))) {
-                    aligns += a
+            if((debugStop < 0) || (aligns.size > debugStop)) {
+                var alg =  generateLocalAlignmentSet(max,A,S,settings)
+                for (a <- alg) {
+                    if ((! filter) || (a.valid(settings))) {
+                        aligns += a
+                    }
                 }
             }
         })
         return aligns
 
-    }
+    } /* */
 
+    /* */ // Aligns Blocks of Sequences in multiple threads
     def genBlockMTAlign(table : KmerTable,settings : AlignSettings,
                      filter : Boolean) : Seq[Alignment] = {
         var futures = mutable.Queue[Future[Seq[Alignment]]]()
         var aligns = mutable.Queue[Alignment]()
-        table.dispatchCollisionBlocks(settings.collBounds,
+        var i = 0
+        table.dispatchCollisionBlocks(settings,
                                 (max : Int, A : Sequence, S : Seq[Sequence]) => {
-            futures += future {generateLocalAlignmentSet(max,A,S,settings)}
+            if((debugStop < 0) || (i > debugStop)) {
+                i += 1
+                futures += future {generateLocalAlignmentSet(max,A,S,settings)}
+            }
         })
 
         for (f <- futures) {
@@ -455,9 +632,11 @@ object Project4 {
         }
 
         return aligns
-    }
+    } /* */
 
 
+    /* */ // calculates overlaps in the standar fashing and returns 
+          //  a string
     def calcOverlaps(alignments : Seq[Alignment],settings : AlignSettings) : String = {
         var out = ""
         for (a <- alignments) {
@@ -467,7 +646,7 @@ object Project4 {
             }                
         }
         return out
-    } */
+    } /* */
 
     
 }

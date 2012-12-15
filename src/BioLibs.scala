@@ -7,14 +7,16 @@
 import java.io._
 
 import scala.collection._
+import scala.collection.mutable.OpenHashMap
+import scala.collection.mutable.ArrayBuffer
 import scala.actors._
 import scala.actors.Futures._
 import scala.collection.immutable.StringOps
 
 object BioLibs {
 
-    // Read in a fasta file dispatching each sequence as it's
-    //  read through the input function. 
+    /* */ // Read in a fasta file dispatching each sequence as it's
+          // read through the input function. 
     def readSeq( file : String, act : (Sequence) => _) : Int = {
         var i = 1
         var s = ""
@@ -39,34 +41,10 @@ object BioLibs {
         act(new Sequence(i,s.toUpperCase))
 
         return i
-    }
+    } /* */ 
 
-    // Generates an integer unique to the first 16 bases of the
-    //  of the input sequence, useful for a number of operations
-    def seqHash( seq : String) : Int = {
-
-        var h : Int = 0
-
-        for (i <- 0 to 16) {
-            var c = Character.toUpperCase(seq.charAt(i))
-
-            h = h << 2 
-
-            c match {
-                case 'A' => h ^= 0
-                case 'C' => h ^= 1
-                case 'T' => h ^= 2
-                case 'G' => h ^= 3
-                case  _  => println("Char \'" + c + "\' is not " +
-                                " acceptable input, Found in \"" +
-                                seq + "\"")
-            }
-        }
-
-        return h
-    }
-
-    // generates a mutable hashSet of strings 
+    /* */ // generates an array of kmers, which contain location
+          //  data and can be easily expanded to conatin more if needed
     def generateKmerSet( k : Int, s : Sequence ) : (ArrayBuffer[Kmer]) = {
         var o = new mutable.ArrayBuffer[Kmer](s.seq.length - k)
         var d = (s.seq.length - k).toFloat
@@ -74,59 +52,64 @@ object BioLibs {
             o += new Kmer(s.id,s.seq.substring(i,i+k),(i.toFloat)/d)
         }
         return o
-    }
+    } /* */
 
+    /* */ // Read in an HOXD file making a specific effort to store it
+          //  in a fast data structure, so the many millions of calls
+          //  to the cost function will happen reasonably quickly. 
     def readHOXD( file : String ) : (Char,Char) => Int = {
 
-            var costs : Array[Array[Int]] = Array.ofDim(4,4)
-            var HOXD = new BufferedReader(new FileReader(file))
-            HOXD.readLine(); //Remove the title line
-            var col = HOXD.readLine().split(",")
-            var line = HOXD.readLine();
-            var A = 0
-            var B = 0
-            while((line != null) && (line != "")) {
-
-                var row = line.split(",")
-                for(i <- 1 until row.length) {
-
-                    row(0).trim().charAt(0).toUpper match {
-                            case 'A' => A = 0
-                            case 'C' => A = 1
-                            case 'G' => A = 2
-                            case 'T' => A = 3 
-                        }
-                    col(i).trim().charAt(0).toUpper match {
-                            case 'A' => B = 0
-                            case 'C' => B = 1
-                            case 'G' => B = 2
-                            case 'T' => B = 3 
-                        }
-                    costs(A)(B) = Integer.parseInt(row(i))
-                }
-
-                line = HOXD.readLine()
-            }
-
-            return (a : Char, b : Char) => {
-                var A = 0
-                a.toUpper match {
+        val costs : Array[Array[Int]] = Array.ofDim(4,4)
+        val HOXD = new BufferedReader(new FileReader(file))
+        HOXD.readLine(); //Remove the title line
+        var col = HOXD.readLine().split(",")
+        var line = HOXD.readLine();
+        var A = 0
+        var B = 0
+        while((line != null) && (line != "")) {
+            var row = line.split(",")
+            for(i <- 1 until row.length) {
+                row(0).trim().charAt(0).toUpper match {
                     case 'A' => A = 0
                     case 'C' => A = 1
                     case 'G' => A = 2
                     case 'T' => A = 3 
                 }
-                var B = 0
-                b.toUpper match {
-                    case 'A' => B = 0
-                     case 'C' => B = 1
-                    case 'G' => B = 2
-                    case 'T' => B = 3 
+                col(i).trim().charAt(0).toUpper match {
+                   case 'A' => B = 0
+                   case 'C' => B = 1
+                   case 'G' => B = 2
+                   case 'T' => B = 3 
                 }
-                costs(A)(B)
+                costs(A)(B) = Integer.parseInt(row(i))
             }
-    }
+            line = HOXD.readLine()
+        }
 
+        return (a : Char, b : Char) => {
+            var A = 0
+            a.toUpper match {
+                case 'A' => A = 0
+                case 'C' => A = 1
+                case 'G' => A = 2
+                case 'T' => A = 3 
+            }
+            b.toUpper match {
+                case 'A' => 
+                    costs(A)(0)
+                case 'C' => 
+                    costs(A)(1)
+                case 'G' =>
+                    costs(A)(2)
+                case 'T' =>
+                    costs(A)(3)
+            }
+        }
+    } /* */
+    
+    /* */ // Same as the readHOXD function but with the data entered in 
+          //  by hand because I can't be arsed to type in a few extra 
+          //  arguments at runtime. 
     def defaultHOXD : (Char,Char) => Int = {
         var costs : Array[Array[Int]] = Array.ofDim(4,4)
 
@@ -158,30 +141,36 @@ object BioLibs {
                 case 'G' => A = 2
                 case 'T' => A = 3 
             }
-            var B = 0
             b.toUpper match {
-                case 'A' => B = 0
-                case 'C' => B = 1
-                case 'G' => B = 2
-                case 'T' => B = 3 
+                case 'A' => 
+                    costs(A)(0)
+                case 'C' => 
+                    costs(A)(1)
+                case 'G' =>
+                    costs(A)(2)
+                case 'T' =>
+                    costs(A)(3)
             }
-            costs(A)(B)
         }
-    }
+    } /* */ 
 
+    /* */ // A simple cost function that only has specific match
+          //  and mismatch values, noting else happens.
     def simpleMatch( mat : Int, miss : Int) : (Char,Char) => Int = {
         return (a : Char, b : Char) => { if (a == b) mat else miss }
-    }
+    } /* */
 
+    /* */ // Standard 3 matrix local alignment function, pulled
+          //  almost stright from project 3.
     def generateLocalAlignment(seqA : Sequence, seqB : Sequence,
                          settings : AlignSettings) : Alignment = {
         
         val A = seqA.seq
         val B = seqB.seq
 
-	    var M : Array[Array[Int]] = Array.ofDim(A.length()+1,B.length()+1)
-        var X : Array[Array[Int]] = Array.ofDim(A.length()+1,B.length()+1)
-	    var Y : Array[Array[Int]] = Array.ofDim(A.length()+1,B.length()+1)
+	    val M : Array[Array[Int]] = Array.ofDim(A.length()+1,B.length()+1)
+        val X : Array[Array[Int]] = Array.ofDim(A.length()+1,B.length()+1)
+	    val Y : Array[Array[Int]] = Array.ofDim(A.length()+1,B.length()+1)
 
 	    for (i <- 0 until A.length()){//Fills in zero row
 	        M(i)(0) = 0
@@ -265,9 +254,10 @@ object BioLibs {
         } while(max > 0)
 
         return new Alignment(seqA,seqB,xSeq,ySeq,(i,j),opt,c,e)
-    }
+    } /* */
     
-
+    /* */ // Generates a set of star alignments while taking care
+          // to reuse memory and other information
     def generateLocalAlignmentSet(maxL : Int, seqA : Sequence, seqS : Seq[Sequence],
                          settings : AlignSettings) : Seq[Alignment] = {
         
@@ -369,7 +359,7 @@ object BioLibs {
         }
         
         return out
-    }
+    } /* */
 }
 
 

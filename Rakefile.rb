@@ -21,8 +21,11 @@ BioJ = "#{LF}/biojava.jar"              # Biojava libraries
 BioAJ = "#{LF}/biojava-alignment.jar"   # Biojava Alignment libraries
 ScaJ = "#{SF}/lib/scala-library.jar"    # Scala Libraries
 AutJ = "#{LF}/autojar.jar"              # Autojar Libraries
+ColtJ = "#{LF}/colt.jar"                # Colt Libraries
+ColtCj = "#{LF}/colt-concurrent.jar"    # Concurrent Colt Libs
+TroveJ = "#{LF}/trove.jar"              # Trobe Libraries
 
-CP = "#{BioJ}:#{BioAJ}:#{SF}:#{CF}"  # Class Path
+CP = "#{TroveJ}:#{SF}:#{CF}"  # Class Path
 
 MD = "#{SF}/Manifest.txt"   # Manifest Document
 
@@ -75,10 +78,14 @@ namespace :run do
     task :default => :scala
 
     task :scala => PS do
-        act = ENV['act']||"" 
+        act = ENV['args']||"" 
         sh "#{BF}/#{SE} #{PS} #{act} -i #{SmallInput}"
     end
 
+    task :large => PS do
+        act = ENV['args']||"" 
+        sh "#{BF}/#{SE} #{PS} #{act} -i #{LargeInput}"
+    end
 end
 
 # Run the full pipeline in a sensible fashion
@@ -145,11 +152,11 @@ namespace :pipeline do
 
     namespace :project do
 
-        task :default do
+        task :default => PS do
             run_project_pipe(SmallInput,true,true)
         end
 
-        task :large do
+        task :large => PS do
             run_project_pipe(LargeInput,true,false)
         end
 
@@ -170,7 +177,7 @@ namespace :pipeline do
             sh("#{BF}/toAmos_new -s #{seq} -b #{bnk}")
             bnkTime = Time.now()
                 # Place your overlapper here
-            sh("#{BF}/#{SE} #{PS} -i #{seq} > #{ovl}")
+            sh("#{BF}/#{SE} #{PS} #{ENV['args']} -i #{seq} > #{ovl}")
             ovrTime = Time.now()
             sh("#{BF}/bank-transact -b #{bnk} -m #{ovl}")
             trnTime = Time.now()
@@ -245,7 +252,7 @@ end
 
 
 file PS => [:scala,"#{CF}/Project4.class",BioJ] do
-    cp BioJ , PS
+    cp TroveJ , PS
     sh "jar umf #{MD} #{PS} -C #{CF} ."
 end
 
