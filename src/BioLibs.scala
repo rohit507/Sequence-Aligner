@@ -18,6 +18,9 @@ object BioLibs {
     var debug = false
     private def printdb(s : String) { if(debug){ println(s)}}
 
+    // Dud alignment that represents a generic alignment failure
+    val dud = new Alignment(new Sequence(0,""),new Sequence(0,""),"","",(0,0),(0,0),0,1)
+
     /* */ // Read in a fasta file dispatching each sequence as it's
           // read through the input function. 
     def readSeq( file : String, act : (Sequence) => _) : Int = {
@@ -363,7 +366,459 @@ object BioLibs {
         
         return out
     } /* */
+
+    /* */ // Uses the fast linear dovetail alignment algorithm to quickly
+          //  align two sequences if there is a reasonable expectation
+          //  sequence A comes before sequence B in a dovetail. 
+    def generateFastDovetailAlignment(seqA : Sequence, seqB : Sequence,
+                         settings : AlignSettings) : Alignment = {
+
+            // Fast dovetail alignment is a 2 part algorithm, first 
+            //  we perform a local alignment of one sequence with the
+            //  first kmer of the second sequence. Then that alignment
+            //  tells us where to start the second, limited distance 
+            //  from match, sequence alignment to check if the possible
+            //  dovetail is a good one. 
+
+        val A = seqA.seq
+        val B = seqB.seq
+
+        // Set up arrays we'll reuse for the whole process, which means
+        //  figure out how wide/large they should be. 
+
+        val width : Int = math.max(settings.kmerSize,
+                        math.floor(A.size * (1 - settings.minIdentity)).toInt + 1)
+
+	    val M : Array[Array[Int]] = Array.ofDim(A.length()+1,width+1)
+        val X : Array[Array[Int]] = Array.ofDim(A.length()+1,width+1)
+	    val Y : Array[Array[Int]] = Array.ofDim(A.length()+1,width+1)
+
+        // The actual alignment routine for the first sequence. 
+        //  and the second kmer of the first sequence. 
+    
+	    for (i <- 0 until A.length()){//Fills in zero row
+	        M(i)(0) = 0
+	        X(i)(0) = 0
+            Y(i)(0) = settings.gapOpen + i * settings.gapExtend;
+	    }
+
+	    for (i <- 0 until width){//Fills in zero columns
+            M(0)(i) = 0
+	        X(0)(i) = settings.gapOpen + i * settings.gapExtend;
+            Y(0)(i) = 0
+	    }
+
+        var max = 0
+        var maxLoc = (0,0)
+        var t = 0
+
+	    for (i <- 1 to A.length()){
+	        for (j <- 1 to width){
+	    	//Based off of history, I created the matrix
+    	        M(i)(j) = settings.costFunc(A.charAt(i-1),B.charAt(j-1)) + 
+                           math.max(math.max(M(i-1)(j-1),Y(i-1)(j-1)),
+                                    math.max(X(i-1)(j-1),0))
+
+                X(i)(j) = settings.gapExtend + 
+                           math.max(math.max(M(i)(j-1) + settings.gapOpen,
+                                             Y(i)(j-1) + settings.gapOpen),
+                                    math.max(X(i)(j-1),0))
+           
+                Y(i)(j) = settings.gapExtend + 
+                           math.max(math.max(M(i-1)(j) + settings.gapOpen, Y(i-1)(j)),
+                                    math.max(X(i-1)(j) + settings.gapOpen, 0))
+
+                t = math.max(M(i)(j),math.max(X(i)(j),Y(i)(j)))
+
+                if (t > max) {
+                    max = t
+                    maxLoc = (i,j)
+                }
+            }
+	    }
+
+        // Backtrack and retrieve the best local alignment for the 
+        // first kmer
+
+        var opt = maxLoc
+        var i = maxLoc._1 
+        var j = maxLoc._2
+
+        max = math.max(M(i)(j),math.max(X(i)(j),Y(i)(j)))
+
+        do {
+            if (M(i)(j) == max) {
+                i -= 1
+                j -= 1
+            } else if (X(i)(j) == max) {
+                j -= 1
+            } else if (Y(i)(j) == max) {
+                i -= 1
+            }
+            max = math.max(M(i)(j),math.max(X(i)(j),Y(i)(j)))
+        } while(max > 0)
+
+        // If that local alignment doesn't end at the first element of
+        //  the second string, it's a dud. 
+
+        if ( j != 0 ) {
+            return dud 
+        }
+
+        // otherwise we can continue and perform the second, slightly
+        //  more elaborate alignment. 
+
+        // start by figuring off the various offsets we want. 
+
+        val doveStart = i   
+        val doveLength = A.length - doveStart 
+        var zeroRow = width / 2 
+
+        // And some basic variables
+    
+        max = 0
+        maxLoc = (0,0)
+        t = 0
+
+        // Now, it must be noted this is *exactly* local sequence alignment 
+        //  algorithm with a simple change of coordinates. 
+        
+        // Namely u,k and are i,j shifted so a diagonal line in ij is
+        //  horizontal in uk
+
+        // U = I - doveStart 
+        // K = J + zeroRow - I + doveStart
+
+        // I = U + doveStart 
+        // J = K - zeroRow + U 
+
+	    for (u <- 0 to doveLength){
+	        for (k <- 0 to width){
+                i = u + doveStart 
+                j = k - zeroRow + u
+
+                //printdb("U: "+u+" K: "+k+" I: "+i+" J: "+j)
+                if ((i <= doveStart) || (j <= 0) || (j > B.length)) { // Initial rows
+                    M(u)(k) = 0
+	                X(u)(k) = 0
+                    Y(u)(k) = 0
+                } else {
+
+                    if(u != 0) {
+    	            M(u)(k) = settings.costFunc(A.charAt(i-1),B.charAt(j-1)) + 
+                                math.max(math.max(M(u-1)(k),Y(u-1)(k)),
+                                    math.max(X(u-1)(k),0))
+                    } else { M(u)(k) = 0 }
+
+                    if(k != 0) {
+                    X(u)(k) = settings.gapExtend + 
+                                math.max(math.max(M(u)(k-1) + settings.gapOpen,
+                                             Y(u)(k-1) + settings.gapOpen),
+                                    math.max(X(u)(k-1),0))
+                    } else { X(u)(k) = 0 }
+
+                    if ((u != 0) && (k != width)) {
+                    Y(u)(k) = settings.gapExtend + 
+                                math.max(math.max(M(u-1)(k+1) + settings.gapOpen, Y(u-1)(k+1)),
+                                    math.max(X(u-1)(k+1) + settings.gapOpen, 0))
+                    } else { Y(u)(k) = 0 }
+                }
+
+                t = math.max(M(u)(k),math.max(X(u)(k),Y(u)(k)))
+
+                if (t > max) {
+                    max = t
+                    maxLoc = (u,k)
+                }
+            }
+	    }
+
+        // and backtrack out of it
+
+        opt = maxLoc
+        var u = maxLoc._1 
+        var k = maxLoc._2
+        var xSeq = "" 
+        var ySeq = ""
+        var c = 0
+        var e = 0
+        var pa = ' '
+        var pb = ' '
+
+        max = math.max(M(u)(k),math.max(X(u)(k),Y(u)(k)))
+
+        do {
+            i = u + doveStart 
+            j = k - zeroRow + u
+
+            if (M(u)(k) == max) {
+                pa = A.charAt(i-1)
+                pb = B.charAt(j-1)
+                u -= 1
+            } else if (X(u)(k) == max) {
+                pa = A.charAt(i-1)
+                pb = '-'
+                k -= 1
+            } else if (Y(u)(k) == max) {
+                pa = '-'
+                pb = B.charAt(j-1)
+                u -= 1
+                k += 1
+            }
+
+            if(pa != pb) {
+                e += 1
+            } else {
+                c += 1
+            } 
+ 
+            xSeq = pa + xSeq
+            ySeq = pb + ySeq
+      
+            max = math.max(M(u)(k),math.max(X(u)(k),Y(u)(k)))
+        } while(max > 0)
+
+        // Get start and end coordinate in ij space
+        i = u + doveStart 
+        j = k - zeroRow + u
+        val newEnd = (opt._1 + doveStart ,opt._2 - zeroRow + opt._1)
+
+        // We can just use this, and since everything is back in IJ space
+        //  like it should be, we don't have to refactor our validity
+        //  rules among other things.
+        return new Alignment(seqA,seqB,xSeq,ySeq,(i,j),newEnd,c,e)
+
+    }   
+
+    /* */ // Uses the fast linear dovetail alignment algorithm to quickly
+          //  align two sequences if there is a reasonable expectation
+          //  sequence A comes before sequence B in a dovetail. 
+    def generateFastDovetailAlignmentSet(maxL : Int, seqA : Sequence, seqS : Seq[Sequence],
+                         settings : AlignSettings) : Seq[Alignment] = {
+        
+        val out = mutable.Queue[Alignment]()
+        val gO = settings.gapOpen
+        val gE = settings.gapExtend
+        val costFunc = settings.costFunc
+
+            // Fast dovetail alignment is a 2 part algorithm, first 
+            //  we perform a local alignment of one sequence with the
+            //  first kmer of the second sequence. Then that alignment
+            //  tells us where to start the second, limited distance 
+            //  from match, sequence alignment to check if the possible
+            //  dovetail is a good one. 
+
+        val A = seqA.seq
+
+        for (seqB <- seqS) {
+            val B = seqB.seq
+
+        // Set up arrays we'll reuse for the whole process, which means
+        //  figure out how wide/large they should be. 
+
+        val width : Int = math.max(settings.kmerSize,
+                        math.floor(A.size * (1 - settings.minIdentity)).toInt + 1)
+
+	    val M : Array[Array[Int]] = Array.ofDim(A.length()+1,width+1)
+        val X : Array[Array[Int]] = Array.ofDim(A.length()+1,width+1)
+	    val Y : Array[Array[Int]] = Array.ofDim(A.length()+1,width+1)
+
+        // The actual alignment routine for the first sequence. 
+        //  and the second kmer of the first sequence. 
+    
+	    for (i <- 0 until A.length()){//Fills in zero row
+	        M(i)(0) = 0
+	        X(i)(0) = 0
+            Y(i)(0) = gO + i * gE;
+	    }
+
+	    for (i <- 0 until width){//Fills in zero columns
+            M(0)(i) = 0
+	        X(0)(i) = gO + i * gE;
+            Y(0)(i) = 0
+	    }
+
+        var max = 0
+        var maxLoc = (0,0)
+        var t = 0
+
+	    for (i <- 1 to A.length()){
+	        for (j <- 1 to width){
+	    	//Based off of history, I created the matrix
+    	        M(i)(j) = settings.costFunc(A.charAt(i-1),B.charAt(j-1)) + 
+                           math.max(math.max(M(i-1)(j-1),Y(i-1)(j-1)),
+                                    math.max(X(i-1)(j-1),0))
+
+                X(i)(j) = gE + 
+                           math.max(math.max(M(i)(j-1) + gO,
+                                             Y(i)(j-1) + gO),
+                                    math.max(X(i)(j-1),0))
+           
+                Y(i)(j) = gE + 
+                           math.max(math.max(M(i-1)(j) + gO, Y(i-1)(j)),
+                                    math.max(X(i-1)(j) + gO, 0))
+
+                t = math.max(M(i)(j),math.max(X(i)(j),Y(i)(j)))
+
+                if (t > max) {
+                    max = t
+                    maxLoc = (i,j)
+                }
+            }
+	    }
+
+        // Backtrack and retrieve the best local alignment for the 
+        // first kmer
+
+        var opt = maxLoc
+        var i = maxLoc._1 
+        var j = maxLoc._2
+
+        max = math.max(M(i)(j),math.max(X(i)(j),Y(i)(j)))
+
+        do {
+            if (M(i)(j) == max) {
+                i -= 1
+                j -= 1
+            } else if (X(i)(j) == max) {
+                j -= 1
+            } else if (Y(i)(j) == max) {
+                i -= 1
+            }
+            max = math.max(M(i)(j),math.max(X(i)(j),Y(i)(j)))
+        } while(max > 0)
+
+        // If that local alignment doesn't end at the first element of
+        //  the second string, it's a dud. 
+
+        if ( j != 0 ) {
+            out += dud 
+        } else {
+
+        // otherwise we can continue and perform the second, slightly
+        //  more elaborate alignment. 
+
+        // start by figuring off the various offsets we want. 
+
+        val doveStart = i   
+        val doveLength = A.length - doveStart 
+        var zeroRow = width / 2 
+
+        // And some basic variables
+    
+        max = 0
+        maxLoc = (0,0)
+        t = 0
+
+        // Now, it must be noted this is *exactly* local sequence alignment 
+        //  algorithm with a simple change of coordinates. 
+        
+        // Namely u,k and are i,j shifted so a diagonal line in ij is
+        //  horizontal in uk
+
+        // U = I - doveStart 
+        // K = J + zeroRow - I + doveStart
+
+        // I = U + doveStart 
+        // J = K - zeroRow + U 
+
+	    for (u <- 0 to doveLength){
+	        for (k <- 0 to width){
+                i = u + doveStart 
+                j = k - zeroRow + u
+
+                //printdb("U: "+u+" K: "+k+" I: "+i+" J: "+j)
+                if ((i <= doveStart) || (j <= 0) || (j > B.length)) { // Initial rows
+                    M(u)(k) = 0
+	                X(u)(k) = 0
+                    Y(u)(k) = 0
+                } else {
+
+                    if(u != 0) {
+    	            M(u)(k) = settings.costFunc(A.charAt(i-1),B.charAt(j-1)) + 
+                                math.max(math.max(M(u-1)(k),Y(u-1)(k)),
+                                    math.max(X(u-1)(k),0))
+                    } else { M(u)(k) = 0 }
+
+                    if(k != 0) {
+                    X(u)(k) = settings.gapExtend + 
+                                math.max(math.max(M(u)(k-1) + settings.gapOpen,
+                                             Y(u)(k-1) + settings.gapOpen),
+                                    math.max(X(u)(k-1),0))
+                    } else { X(u)(k) = 0 }
+
+                    if ((u != 0) && (k != width)) {
+                    Y(u)(k) = settings.gapExtend + 
+                                math.max(math.max(M(u-1)(k+1) + settings.gapOpen, Y(u-1)(k+1)),
+                                    math.max(X(u-1)(k+1) + settings.gapOpen, 0))
+                    } else { Y(u)(k) = 0 }
+                }
+
+                t = math.max(M(u)(k),math.max(X(u)(k),Y(u)(k)))
+
+                if (t > max) {
+                    max = t
+                    maxLoc = (u,k)
+                }
+            }
+	    }
+
+        // and backtrack out of it
+
+        opt = maxLoc
+        var u = maxLoc._1 
+        var k = maxLoc._2
+        var xSeq = "" 
+        var ySeq = ""
+        var c = 0
+        var e = 0
+        var pa = ' '
+        var pb = ' '
+
+        max = math.max(M(u)(k),math.max(X(u)(k),Y(u)(k)))
+
+        do {
+            i = u + doveStart 
+            j = k - zeroRow + u
+
+            if (M(u)(k) == max) {
+                pa = A.charAt(i-1)
+                pb = B.charAt(j-1)
+                u -= 1
+            } else if (X(u)(k) == max) {
+                pa = A.charAt(i-1)
+                pb = '-'
+                k -= 1
+            } else if (Y(u)(k) == max) {
+                pa = '-'
+                pb = B.charAt(j-1)
+                u -= 1
+                k += 1
+            }
+
+            if(pa != pb) {
+                e += 1
+            } else {
+                c += 1
+            } 
+ 
+            xSeq = pa + xSeq
+            ySeq = pb + ySeq
+      
+            max = math.max(M(u)(k),math.max(X(u)(k),Y(u)(k)))
+        } while(max > 0)
+
+        // Get start and end coordinate in ij space
+        i = u + doveStart 
+        j = k - zeroRow + u
+        val newEnd = (opt._1 + doveStart ,opt._2 - zeroRow + opt._1)
+
+        // We can just use this, and since everything is back in IJ space
+        //  like it should be, we don't have to refactor our validity
+        //  rules among other things.
+        out += new Alignment(seqA,seqB,xSeq,ySeq,(i,j),newEnd,c,e)
+        }}
+        return out
+    }
 }
-
-
 

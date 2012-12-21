@@ -178,7 +178,7 @@ namespace :pipeline do
             sh("#{BF}/toAmos_new -s #{seq} -b #{bnk}")
             bnkTime = Time.now()
                 # Place your overlapper here
-            sh("#{BF}/#{SE} #{PS} -i #{seq} -o #{ovl} --debug --st-align --mt-hash" +
+            sh("#{BF}/#{SE} #{PS} -i #{seq} -o #{ovl}" +
                 " #{CmdLineArgs} #{ENV['args']}")
             ovrTime = Time.now()
             sh("#{BF}/bank-transact -b #{bnk} -m #{ovl}")

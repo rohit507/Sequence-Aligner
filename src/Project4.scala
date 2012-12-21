@@ -26,6 +26,7 @@ object Project4 {
     val rt = Runtime.getRuntime()
     var rand = new Random(System.currentTimeMillis())
 
+
 /*  ======== Defaults =========
     min overlap length = 40 
     min % id= 98 or 99% 
@@ -41,8 +42,9 @@ object Project4 {
     var action = "calc-overlaps"
     var input = ""
     var output = ""
-    var stHash = true
+    var stHash = false
     var stAlign = false
+    var fdAlign = true
     var blockAlign = true
     
     def main(args: Array[String]) {
@@ -182,6 +184,12 @@ object Project4 {
                 case "--single-align" =>
                     blockAlign = false
                     i += 1
+                case "--quadratic-align" =>
+                    fdAlign = false
+                    i += 1 
+                case "--linear-align" =>
+                    fdAlign = true
+                    i += 1
                 case "--calc-overlaps" =>
                     action = "calc-overlaps"
                     i += 1
@@ -244,7 +252,7 @@ object Project4 {
         }
 
         return new AlignSettings(compFunc,gapOpen,gapExtend,minOverlap,
-                                 minIdentity,maxIgnore,
+                                 minIdentity,maxIgnore,kSize,
                                  (minCollisions,maxCollisions),
                                  (kmerEdge,kmerCenter))
  
@@ -459,10 +467,17 @@ object Project4 {
     /* */ // Benchmarks both the single threaded and multithreaded
           //  kmer generation stuff. 
     def benchAlign(file : String , s : AlignSettings) {
-       benchAlignHelper(file,s,"single threaded single",genSingleSTAlign)
-       benchAlignHelper(file,s,"single threaded block",genBlockSTAlign)
-       benchAlignHelper(file,s,"multi threaded single",genSingleMTAlign)
-       benchAlignHelper(file,s,"multi threaded block",genBlockMTAlign)
+       fdAlign = false
+       benchAlignHelper(file,s,"single threaded quad single",genSingleSTAlign)
+       benchAlignHelper(file,s,"single threaded quad block",genBlockSTAlign)
+       benchAlignHelper(file,s,"multi threaded quad single",genSingleMTAlign)
+       benchAlignHelper(file,s,"multi threaded quad block",genBlockMTAlign)
+       fdAlign = true
+       benchAlignHelper(file,s,"single threaded linear single",genSingleSTAlign)
+       benchAlignHelper(file,s,"single threaded linear block",genBlockSTAlign)
+       benchAlignHelper(file,s,"multi threaded linear single",genSingleMTAlign)
+       benchAlignHelper(file,s,"multi threaded linear block",genBlockMTAlign)
+
     } /* */
  
     /* */ // Tests overlaps in a easy to read visual format
@@ -566,6 +581,28 @@ object Project4 {
         }
       } /* */
 
+    /* */ // Creates the alignment table/output with the settings
+          // we chose, be it fast dovetail or otherwise. 
+    def calcLocalAlignment( A : Sequence, B : Sequence,
+                    settings : AlignSettings) : Alignment = {
+        if (fdAlign) {
+            return generateFastDovetailAlignment(A,B,settings)
+        } else {
+            return generateLocalAlignment(A,B,settings)  
+        }
+    }
+
+    /* */ // Creates the alignment table/output with the settings
+          // we chose, be it fast dovetail or otherwise, in set form 
+    def calcLocalAlignmentSet(m : Int, A : Sequence, B : Seq[Sequence],
+                    settings : AlignSettings) : Seq[Alignment] = {
+        if (fdAlign) {
+            return generateFastDovetailAlignmentSet(m,A,B,settings)
+        } else {
+            return generateLocalAlignmentSet(m,A,B,settings)  
+        }
+    }
+
     /* */ //Aligns Sequences one at a time in a single thread
     def genSingleSTAlign(table : KmerTable,settings : AlignSettings,
                      filter : Boolean) : Seq[Alignment] = {
@@ -586,7 +623,7 @@ object Project4 {
                         " free memory, out of " + rt.totalMemory() +
                         " total memory." )
                 }
-                var alg =  generateLocalAlignment(A,B,settings)    
+                var alg =  calcLocalAlignment(A,B,settings)    
                 if ((! filter) || (alg.valid(settings))) {
                     aligns += alg
                 }
@@ -613,7 +650,7 @@ object Project4 {
                         printdb("Starting Align " + c + 
                             " on thread " + Thread.currentThread.getName)
                     }
-                    val a = generateLocalAlignment(A,B,settings)
+                    val a = calcLocalAlignment(A,B,settings)
                     if( (i % 8000) == 0) {
                         printdb("There is " + rt.freeMemory() +
                             " free memory, out of " + rt.totalMemory() +
@@ -671,7 +708,7 @@ object Project4 {
                         " free memory, out of " + rt.totalMemory() +
                         " total memory." )
                 }
-                var alg =  generateLocalAlignmentSet(max,A,S,settings)
+                var alg =  calcLocalAlignmentSet(max,A,S,settings)
                 for (a <- alg) {
                     if ((! filter) || (a.valid(settings))) {
                         aligns += a
@@ -714,7 +751,7 @@ object Project4 {
                         printdb("Starting Align Block " + i + 
                             " on thread " + Thread.currentThread.getName)
                     }
-                    val a = generateLocalAlignmentSet(max,A,S,settings)
+                    val a = calcLocalAlignmentSet(max,A,S,settings)
                     if((c % 100) == 0) {
                         printdb("Completed Align Block " + i + 
                             " on thread " + Thread.currentThread.getName)
@@ -758,13 +795,14 @@ object Project4 {
     def calcOverlaps(alignments : Seq[Alignment],settings : AlignSettings) {
         var i = 0
         val file = new File(output)
+        var oStream : FileWriter = null
         if (output != "") {
             if(file.exists()){
                 file.delete()
             }
             file.createNewFile()
+            oStream = new FileWriter(file)
         }
-        val oStream = new FileWriter(file)
         var out = ""
         for (a <- alignments) {
             var o = a.getOverlap()

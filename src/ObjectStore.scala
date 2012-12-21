@@ -15,7 +15,8 @@ class ObjectStore {
 // An Immutable Object filled with all the various settings
 //  for sequence alignment and other similar operations. 
 class AlignSettings( subf : (Char,Char) => Int , gO : Int, gE : Int, mO : Int,
-                       mId : Float, mIg : Int, cB : (Int,Int), kB : (Float,Float)) {
+                       mId : Float, mIg : Int, kS : Int,
+                       cB : (Int,Int), kB : (Float,Float)) {
     val costFunc : (Char,Char) => Int = subf
     val gapOpen : Int = gO
     val gapExtend : Int = gE
@@ -25,6 +26,7 @@ class AlignSettings( subf : (Char,Char) => Int , gO : Int, gE : Int, mO : Int,
     val minCollisions : Int = cB._1
     val maxCollisions : Int = cB._2
     val collBounds = cB
+    val kmerSize = kS
     val kmerEdge = kB._1
     val kmerCenter = kB._2
     val kmerHeadEdge = kB._1
